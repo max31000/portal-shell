@@ -6,14 +6,34 @@ const TIMEOUT_MS = 15_000;
 
 interface ServiceFrameProps {
   service: Service;
+  /**
+   * Initial path inside the service (relative to service root).
+   * E.g. "/operations" or "/" (default).
+   * Combined with service.path to build the iframe src.
+   */
+  initialPath?: string;
 }
 
-export function ServiceFrame({ service }: ServiceFrameProps) {
+/**
+ * Builds the full src URL for the iframe.
+ * service.path = "/cashpulse/" (always has trailing slash)
+ * initialPath  = "/operations" or "/"
+ * result       = "/cashpulse/operations" or "/cashpulse/"
+ */
+function buildSrc(servicePath: string, initialPath: string): string {
+  const base = servicePath.replace(/\/$/, ''); // "/cashpulse"
+  const path = initialPath === '/' ? '/' : initialPath;
+  return base + path; // "/cashpulse/operations" or "/cashpulse/"
+}
+
+export function ServiceFrame({ service, initialPath = '/' }: ServiceFrameProps) {
   const [loading, setLoading] = useState(true);
   const [timedOut, setTimedOut] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Reset state on service change
+  const src = buildSrc(service.path, initialPath);
+
+  // Reset state on service change (key handles full remount, but keep for safety)
   useEffect(() => {
     setLoading(true);
     setTimedOut(false);
@@ -36,10 +56,10 @@ export function ServiceFrame({ service }: ServiceFrameProps) {
 
   return (
     <Box style={{ position: 'relative', width: '100%', height: '100%' }}>
-      {/* iframe — always in DOM so it starts loading */}
+      {/* key ensures full remount on service change */}
       <iframe
         key={service.id}
-        src={service.path}
+        src={src}
         title={service.name}
         onLoad={handleLoad}
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
@@ -82,7 +102,7 @@ export function ServiceFrame({ service }: ServiceFrameProps) {
             <Button
               variant="light"
               color={service.color}
-              onClick={() => window.open(service.path, '_blank')}
+              onClick={() => window.open(src, '_blank')}
             >
               Открыть напрямую
             </Button>
