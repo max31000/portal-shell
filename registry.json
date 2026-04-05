@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "services": [
+    {
+      "id": "cashpulse",
+      "name": "CashPulse",
+      "description": "Прогноз денежного потока",
+      "icon": "📊",
+      "path": "/cashpulse/",
+      "color": "#228be6"
+    },
+    {
+      "id": "credit_calc",
+      "name": "Ипотечный стратег",
+      "description": "Калькулятор ИТ-ипотеки",
+      "icon": "🏠",
+      "path": "/credit_calc/",
+      "color": "#40c057"
+    }
+  ]
+}
