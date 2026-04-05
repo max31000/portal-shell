@@ -11,23 +11,38 @@ import type { Service } from './types';
 
 const SHELL_ORIGIN = 'https://mvv42.ru';
 
-interface UrlState {
-  appId: string | null;
-  /** Path inside the service, e.g. "/operations" or "/" */
-  path: string;
+interface HashState {
+  /** Service id parsed from hash, or null for home */
+  serviceId: string | null;
+  /** Path inside the service, always starts with "/" */
+  servicePath: string;
 }
 
-function parseUrl(): UrlState {
-  const params = new URLSearchParams(window.location.search);
-  return {
-    appId: params.get('app'),
-    path: params.get('path') ?? '/',
-  };
+/**
+ * Parse the current window.location.hash.
+ *
+ * Examples:
+ *   ""              → { serviceId: null, servicePath: "/" }
+ *   "#/"            → { serviceId: null, servicePath: "/" }
+ *   "#/cashpulse"   → { serviceId: "cashpulse", servicePath: "/" }
+ *   "#/cashpulse/operations" → { serviceId: "cashpulse", servicePath: "/operations" }
+ */
+function parseHash(): HashState {
+  // Remove the leading '#'
+  const hash = window.location.hash.replace(/^#/, '') || '/';
+  // hash now looks like "/" or "/cashpulse" or "/cashpulse/operations"
+  const parts = hash.split('/').filter(Boolean); // ["cashpulse", "operations"]
+  if (parts.length === 0) {
+    return { serviceId: null, servicePath: '/' };
+  }
+  const [serviceId, ...rest] = parts;
+  const servicePath = rest.length > 0 ? '/' + rest.join('/') : '/';
+  return { serviceId, servicePath };
 }
 
-function buildShellUrl(serviceId: string, path: string): string {
-  const p = path && path !== '/' ? `&path=${encodeURIComponent(path)}` : '';
-  return `/?app=${serviceId}${p}`;
+function buildHash(serviceId: string, servicePath: string): string {
+  const path = servicePath === '/' ? '' : servicePath;
+  return `#/${serviceId}${path}`;
 }
 
 export default function App() {
@@ -36,73 +51,63 @@ export default function App() {
   const [initialPath, setInitialPath] = useState<string>('/');
   const [navOpened, { toggle: toggleNav, close: closeNav }] = useDisclosure(false);
 
-  // Track active service id in a ref so postMessage handler always has fresh value
   const activeIdRef = useRef<string | null>(null);
   useEffect(() => {
     activeIdRef.current = active?.id ?? null;
   }, [active]);
 
-  // Initialise from URL on first load (after registry is ready)
+  /** Resolve service from parsed hash once registry is loaded */
+  const applyHash = useCallback(
+    (state: HashState) => {
+      if (services.length === 0) return;
+      const found = state.serviceId
+        ? (services.find((s) => s.id === state.serviceId) ?? null)
+        : null;
+      setActive(found);
+      setInitialPath(state.servicePath);
+    },
+    [services],
+  );
+
+  // Initialise from hash on first load
   useEffect(() => {
     if (services.length === 0) return;
-    const { appId, path } = parseUrl();
-    const found = appId ? (services.find((s) => s.id === appId) ?? null) : null;
-    setActive(found);
-    setInitialPath(path);
-  }, [services]);
+    applyHash(parseHash());
+  }, [services, applyHash]);
 
-  // Select a service from sidebar/welcome (always starts at root of service)
+  // Handle browser Back / Forward (hashchange fires for hash navigation)
+  useEffect(() => {
+    function onHashChange() {
+      applyHash(parseHash());
+    }
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, [applyHash]);
+
+  // Select a service (sidebar / welcome card click) — always at service root
   const selectService = useCallback(
     (service: Service) => {
       setActive(service);
       setInitialPath('/');
       closeNav();
-      history.pushState({ serviceId: service.id, path: '/' }, '', `/?app=${service.id}`);
+      window.location.hash = buildHash(service.id, '/');
     },
     [closeNav],
   );
 
-  // Handle browser Back / Forward
-  useEffect(() => {
-    function onPopState(e: PopStateEvent) {
-      const state = e.state as { serviceId?: string; path?: string } | null;
-      const { appId, path } = parseUrl();
-      const id = state?.serviceId ?? appId;
-      const restoredPath = state?.path ?? path;
-
-      if (!id) {
-        setActive(null);
-        setInitialPath('/');
-        return;
-      }
-      if (services.length > 0) {
-        const found = services.find((s) => s.id === id) ?? null;
-        setActive(found);
-        setInitialPath(restoredPath ?? '/');
-      }
-    }
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
-  }, [services]);
-
-  // Listen for NAVIGATE messages from iframe (service internal navigation)
+  // Listen for NAVIGATE postMessage from iframe → update hash
   useEffect(() => {
     function onMessage(e: MessageEvent) {
       if (e.origin !== SHELL_ORIGIN) return;
-
       const data = e.data as { type?: string; serviceId?: string; path?: string };
-      if (data?.type !== 'NAVIGATE') return;
+      if (data?.type !== 'NAVIGATE' || !data.serviceId || !data.path) return;
+      if (data.serviceId !== activeIdRef.current) return;
 
-      const { serviceId, path } = data;
-      if (!serviceId || !path) return;
-
-      // Only update URL if the message is from the currently active service
-      if (serviceId !== activeIdRef.current) return;
-
-      const url = buildShellUrl(serviceId, path);
-      history.replaceState({ serviceId, path }, '', url);
+      // Update hash without triggering hashchange (replaceState on hash)
+      const newHash = buildHash(data.serviceId, data.path);
+      // Use replaceState so Back button skips over intermediate navigation steps
+      history.replaceState(null, '', newHash);
     }
-
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, []);
@@ -140,10 +145,8 @@ export default function App() {
     >
       <Toolbar active={active} navOpened={navOpened} onBurgerClick={toggleNav} />
 
-      {/* Desktop sidebar */}
       <Sidebar services={services} active={active} onSelect={selectService} />
 
-      {/* Mobile drawer */}
       <Drawer
         opened={navOpened}
         onClose={closeNav}
