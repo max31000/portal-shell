@@ -6,6 +6,7 @@ import { useRegistry } from './useRegistry';
 import { Sidebar } from './components/Sidebar';
 import { ServiceFrame } from './components/ServiceFrame';
 import { Toolbar } from './components/Toolbar';
+import { Welcome } from './components/Welcome';
 import type { Service } from './types';
 
 function getAppFromUrl(): string | null {
@@ -18,15 +19,15 @@ export default function App() {
   const [active, setActive] = useState<Service | null>(null);
   const [navOpened, { toggle: toggleNav, close: closeNav }] = useDisclosure(false);
 
-  // Initialise active service from URL or first in list
+  // Initialise active service from URL — no auto-select if no ?app= param
   useEffect(() => {
     if (services.length === 0) return;
     const appId = getAppFromUrl();
-    const found = appId ? services.find((s) => s.id === appId) : null;
-    setActive(found ?? services[0]);
+    const found = appId ? (services.find((s) => s.id === appId) ?? null) : null;
+    setActive(found);
   }, [services]);
 
-  // Push URL state on active change
+  // Select a service: update state and push URL
   const selectService = useCallback(
     (service: Service) => {
       setActive(service);
@@ -36,13 +37,18 @@ export default function App() {
     [closeNav],
   );
 
-  // Handle browser Back / Forward
+  // Handle browser Back / Forward (including back-to-home with no ?app=)
   useEffect(() => {
     function onPopState(e: PopStateEvent) {
       const id = (e.state as { serviceId?: string } | null)?.serviceId ?? getAppFromUrl();
-      if (id && services.length > 0) {
-        const found = services.find((s) => s.id === id);
-        if (found) setActive(found);
+      if (!id) {
+        // Navigated back to home
+        setActive(null);
+        return;
+      }
+      if (services.length > 0) {
+        const found = services.find((s) => s.id === id) ?? null;
+        setActive(found);
       }
     }
     window.addEventListener('popstate', onPopState);
@@ -101,9 +107,7 @@ export default function App() {
         {active ? (
           <ServiceFrame service={active} />
         ) : (
-          <Center h="100%">
-            <Text c="dimmed">Нет доступных сервисов</Text>
-          </Center>
+          <Welcome services={services} onSelect={selectService} />
         )}
       </AppShell.Main>
     </AppShell>
