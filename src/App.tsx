@@ -69,10 +69,10 @@ export default function App() {
     [services],
   );
 
-  // Initialise from hash on first load
+  // Initialise from hash on first load (intentional — runs once when registry loads)
   useEffect(() => {
     if (services.length === 0) return;
-    applyHash(parseHash());
+    applyHash(parseHash()); // eslint-disable-line react-hooks/set-state-in-effect
   }, [services, applyHash]);
 
   // Handle browser Back / Forward (hashchange fires for hash navigation)

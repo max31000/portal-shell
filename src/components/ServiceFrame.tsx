@@ -33,19 +33,23 @@ export function ServiceFrame({ service, initialPath = '/' }: ServiceFrameProps) 
 
   const src = buildSrc(service.path, initialPath);
 
-  // Reset state on service change (key handles full remount, but keep for safety)
-  useEffect(() => {
+  // Reset loading state when service changes (synchronous update during render,
+  // per React docs: react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
+  const [prevServiceId, setPrevServiceId] = useState(service.id);
+  if (service.id !== prevServiceId) {
+    setPrevServiceId(service.id);
     setLoading(true);
     setTimedOut(false);
+  }
 
-    timerRef.current = setTimeout(() => {
+  // Set up load timeout
+  useEffect(() => {
+    const timer = setTimeout(() => {
       setTimedOut(true);
       setLoading(false);
     }, TIMEOUT_MS);
-
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
+    timerRef.current = timer;
+    return () => clearTimeout(timer);
   }, [service.id]);
 
   function handleLoad() {
