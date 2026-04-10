@@ -13,6 +13,10 @@ on:
       - 'package-lock.json'
       - '.github/workflows/deploy.yml'
 
+concurrency:
+  group: deploy-portal
+  cancel-in-progress: true
+
 jobs:
   build-deploy:
     runs-on: ubuntu-latest
@@ -31,11 +35,17 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
+      - name: Lint
+        run: npm run lint
+
       - name: Build
         run: npm run build
 
+      - name: Copy registry.json into dist
+        run: cp registry.json dist/
+
       - name: Deploy dist to VDS
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.VDS_HOST }}
           username: ${{ secrets.VDS_USER }}
@@ -45,11 +55,19 @@ jobs:
           strip_components: 1
           rm: true
 
-      - name: Deploy registry.json to VDS
-        uses: appleboy/scp-action@v0.1.7
+      - name: Verify deployment
+        uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VDS_HOST }}
           username: ${{ secrets.VDS_USER }}
           key: ${{ secrets.VDS_SSH_KEY }}
-          source: "registry.json"
-          target: /var/www/portal/
+          script: |
+            curl -sf https://mvv42.ru/ > /dev/null && echo "Deploy OK" || (echo "DEPLOY FAILED" && exit 1)
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+            -d text="❌ Portal Shell deploy failed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            -d parse_mode=HTML
