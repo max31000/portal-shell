@@ -16,6 +16,14 @@
       "icon": "🏠",
       "path": "/credit_calc/",
       "color": "#40c057"
+    },
+    {
+      "id": "bonds",
+      "name": "Bond Analytics",
+      "description": "Аналитика облигационного портфеля",
+      "icon": "📈",
+      "path": "/bonds/",
+      "color": "#7048e8"
     }
   ]
 }
