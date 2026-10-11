@@ -2,12 +2,14 @@
   position: fixed;
   inset: 0 0 auto 0;
   z-index: var(--z-topbar);
-  height: var(--topbar-h);
+  /* Notch / status bar (viewport-fit=cover): the bar grows by the top inset, content stays below it. */
+  height: calc(var(--topbar-h) + env(safe-area-inset-top));
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-4);
-  padding: 0 var(--sp-3) 0 var(--sp-4);
+  padding: env(safe-area-inset-top) calc(var(--sp-3) + env(safe-area-inset-right)) 0
+    calc(var(--sp-4) + env(safe-area-inset-left));
   background: var(--topbar-bg);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   backdrop-filter: saturate(180%) blur(20px);
@@ -117,7 +119,8 @@
 
 @media (max-width: 480px) {
   .bar {
-    padding: 0 var(--sp-2) 0 var(--sp-3);
+    padding: env(safe-area-inset-top) calc(var(--sp-2) + env(safe-area-inset-right)) 0
+      calc(var(--sp-3) + env(safe-area-inset-left));
   }
 
   /* With a service open, the crumb carries identity; the wordmark yields space. */

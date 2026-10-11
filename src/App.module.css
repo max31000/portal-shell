@@ -1,7 +1,7 @@
 .main {
   height: 100vh;
   height: 100dvh;
-  padding-top: var(--topbar-h);
+  padding-top: calc(var(--topbar-h) + env(safe-area-inset-top));
 }
 
 .status {

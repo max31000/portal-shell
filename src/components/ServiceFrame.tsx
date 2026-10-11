@@ -34,7 +34,10 @@ interface ServiceFrameProps {
 
 type LoadState = 'loading' | 'loaded' | 'timeout';
 
-/** Renders one service. Mount with `key={service.id}` so switching services starts fresh. */
+/**
+ * Renders one service. Mount with a `key` that changes per service (and per explicit reload) so
+ * switching services — or re-selecting the active one — starts fresh at `initialPath`.
+ */
 export function ServiceFrame({ service, initialPath = '/', scheme, onServiceMessage, ref }: ServiceFrameProps) {
   const [state, setState] = useState<LoadState>('loading');
   const [attempt, setAttempt] = useState(0);
@@ -113,7 +116,7 @@ export function ServiceFrame({ service, initialPath = '/', scheme, onServiceMess
         src={src}
         title={service.name}
         onLoad={handleLoad}
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals allow-popups-to-escape-sandbox"
         className={classes.frame}
         data-hidden={state === 'timeout' || undefined}
       />

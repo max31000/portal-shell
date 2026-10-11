@@ -29,6 +29,11 @@ function TelegramWidget({ onAuth }: { onAuth: (data: TelegramAuthData) => void }
     if (!host) return;
     window[CALLBACK] = onAuth;
 
+    // One fresh slot per mount. Under StrictMode the effect runs twice; a script from the first run that
+    // still executes renders into its own detached slot instead of next to the live widget.
+    const slot = document.createElement('div');
+    host.replaceChildren(slot);
+
     const script = document.createElement('script');
     script.async = true;
     script.src = 'https://telegram.org/js/telegram-widget.js?22';
@@ -38,9 +43,10 @@ function TelegramWidget({ onAuth }: { onAuth: (data: TelegramAuthData) => void }
     script.setAttribute('data-userpic', 'false');
     script.setAttribute('data-onauth', `${CALLBACK}(user)`);
     script.onerror = () => setFailed(true);
-    host.appendChild(script);
+    slot.appendChild(script);
 
     return () => {
+      slot.remove();
       host.replaceChildren();
       if (window[CALLBACK] === onAuth) delete window[CALLBACK];
     };
@@ -56,6 +62,12 @@ function TelegramWidget({ onAuth }: { onAuth: (data: TelegramAuthData) => void }
 
 export function LoginModal({ opened, onClose, onAuth }: LoginModalProps) {
   const [phase, setPhase] = useState<Phase>('idle');
+  // Every opening starts clean (a previous error / pending state must not stick).
+  const [wasOpened, setWasOpened] = useState(opened);
+  if (opened !== wasOpened) {
+    setWasOpened(opened);
+    if (opened) setPhase('idle');
+  }
   // Stable callback identity for the widget; it reads the latest props through a ref.
   const onAuthRef = useRef(onAuth);
   useEffect(() => {
@@ -75,6 +87,7 @@ export function LoginModal({ opened, onClose, onAuth }: LoginModalProps) {
       opened={opened}
       onClose={onClose}
       centered
+      zIndex="var(--z-modal)"
       size={400}
       radius="lg"
       padding={0}

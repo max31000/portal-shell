@@ -63,4 +63,5 @@ export const theme = createTheme({
   },
   cursorType: 'pointer',
   focusRing: 'never',
+  respectReducedMotion: true,
 });

@@ -66,6 +66,7 @@
   --z-backdrop: 190;
   --z-popover: 200;
   --z-modal: 300;
+  --z-toast: 400;
 }
 
 /* ---------- Light ---------- */
