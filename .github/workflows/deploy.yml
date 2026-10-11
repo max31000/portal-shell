@@ -6,9 +6,9 @@ on:
     paths:
       - 'src/**'
       - 'public/**'
-      - 'registry.json'
       - 'index.html'
       - 'vite.config.ts'
+      - 'tsconfig*.json'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/deploy.yml'
@@ -34,16 +34,20 @@ jobs:
         run: npm ci
 
       - name: Type check
-        run: npx tsc --noEmit
+        run: npx tsc -b
 
       - name: Lint
         run: npm run lint
 
+      - name: Test
+        run: npm test
+
       - name: Build
         run: npm run build
 
-      - name: Copy registry.json into dist
-        run: cp registry.json dist/
+      # public/registry.json is copied into dist/ by Vite.
+      - name: Check registry.json in dist
+        run: test -f dist/registry.json
 
       - name: Deploy dist to VDS
         uses: appleboy/scp-action@v1

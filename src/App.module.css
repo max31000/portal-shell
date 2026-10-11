@@ -1,0 +1,42 @@
+.main {
+  height: 100vh;
+  height: 100dvh;
+  padding-top: var(--topbar-h);
+}
+
+.status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: var(--sp-8) var(--sp-6);
+  text-align: center;
+}
+
+.statusTitle {
+  margin: 0;
+  font-size: var(--fs-22);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-title);
+}
+
+.statusText {
+  margin: var(--sp-2) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+  color: var(--text-3);
+}
+
+.statusAction {
+  margin-top: var(--sp-6);
+  height: 36px;
+  padding: 0 var(--sp-4);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+}
