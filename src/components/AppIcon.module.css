@@ -1,0 +1,27 @@
+.tile {
+  --tile-size: 48px;
+  --tile-color: #71717a;
+
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--tile-size);
+  height: var(--tile-size);
+  /* ~23% radius reads as a squircle at every size */
+  border-radius: calc(var(--tile-size) * 0.23);
+  color: #fff;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 60%),
+    var(--tile-color);
+  box-shadow: var(--tile-highlight);
+  overflow: hidden;
+}
+
+.letter {
+  font-size: calc(var(--tile-size) * 0.44);
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
