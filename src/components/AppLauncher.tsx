@@ -41,6 +41,10 @@ function DotsIcon() {
 export function AppLauncher({ services, activeId, onSelect, isLocked, onLockedSelect }: AppLauncherProps) {
   const [open, setOpen] = useState(false);
   const [focusIndex, setFocusIndex] = useState(0);
+  // Opened with the mouse: focus the panel itself so no tile shows a focus ring
+  // until the user starts navigating with the keyboard.
+  const [keyboardNav, setKeyboardNav] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<Position>({ top: 60, right: 12 });
   const buttonRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -54,11 +58,15 @@ export function AppLauncher({ services, activeId, onSelect, isLocked, onLockedSe
     setPos({ top: rect.bottom + 8, right: Math.max(8, window.innerWidth - rect.right) });
   }, []);
 
-  const openMenu = useCallback(() => {
-    measure();
-    setFocusIndex(0);
-    setOpen(true);
-  }, [measure]);
+  const openMenu = useCallback(
+    (viaKeyboard: boolean) => {
+      measure();
+      setFocusIndex(0);
+      setKeyboardNav(viaKeyboard);
+      setOpen(true);
+    },
+    [measure],
+  );
 
   const close = useCallback((restoreFocus: boolean) => {
     setOpen(false);
@@ -67,8 +75,10 @@ export function AppLauncher({ services, activeId, onSelect, isLocked, onLockedSe
 
   // Move DOM focus with the roving index while open.
   useLayoutEffect(() => {
-    if (open) itemRefs.current[focusIndex]?.focus();
-  }, [open, focusIndex]);
+    if (!open) return;
+    if (keyboardNav) itemRefs.current[focusIndex]?.focus();
+    else panelRef.current?.focus();
+  }, [open, focusIndex, keyboardNav]);
 
   useEffect(() => {
     if (!open) return;
@@ -118,6 +128,12 @@ export function AppLauncher({ services, activeId, onSelect, isLocked, onLockedSe
         return;
     }
     e.preventDefault();
+    if (!keyboardNav) {
+      // First navigation key after a mouse open lands on the first tile.
+      setKeyboardNav(true);
+      setFocusIndex(0);
+      return;
+    }
     setFocusIndex(next);
   }
 
@@ -144,7 +160,7 @@ export function AppLauncher({ services, activeId, onSelect, isLocked, onLockedSe
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        onClick={() => (open ? close(false) : openMenu())}
+        onClick={(e) => (open ? close(false) : openMenu(e.detail === 0))}
       >
         <DotsIcon />
       </button>
@@ -164,6 +180,8 @@ export function AppLauncher({ services, activeId, onSelect, isLocked, onLockedSe
               id={menuId}
               role="menu"
               aria-label="Сервисы"
+              ref={panelRef}
+              tabIndex={-1}
               className={classes.panel}
               style={{ '--pop-top': `${pos.top}px`, '--pop-right': `${pos.right}px` } as CSSProperties}
               onKeyDown={onMenuKeyDown}

@@ -32,6 +32,15 @@ describe('AppLauncher', () => {
     expect(document.activeElement).toBe(items[0]);
   });
 
+  it('opened with the mouse focuses the panel, first arrow key lands on the first tile', () => {
+    const { button } = setup();
+    fireEvent.click(button, { detail: 1 });
+    const menu = screen.getByRole('menu');
+    expect(document.activeElement).toBe(menu);
+    fireEvent.keyDown(menu, { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(screen.getAllByRole('menuitem')[0]);
+  });
+
   it('closes on Escape and returns focus to the button', () => {
     const { button } = setup();
     fireEvent.click(button);
