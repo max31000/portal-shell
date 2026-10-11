@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useComputedColorScheme } from '@mantine/core';
 import { useRegistry } from './useRegistry';
-import { useAuth, isAppLocked } from './auth/useAuth';
+import { useAuth, isAppLocked, type AuthSnapshot } from './auth/useAuth';
 import { sanitizeReturnUrl } from './auth/returnUrl';
-import type { TelegramAuthData } from './auth/api';
+import { refreshSession, type TelegramAuthData } from './auth/api';
 import { TopBar } from './components/TopBar';
 import { AppLauncher } from './components/AppLauncher';
 import { Home } from './components/Home';
@@ -12,6 +12,8 @@ import { LoginModal } from './components/LoginModal';
 import { SignInButton, UserMenu } from './components/UserMenu';
 import { buildHash, parseHash, type HashState } from './shell/hash';
 import type { AuthRequiredMessage, NavigateMessage } from './shell/messages';
+import { decideAuthRequired } from './shell/authRequired';
+import { NO_ACCESS_NOTICE, showNotice } from './shell/notice';
 import type { Service } from './types';
 import classes from './App.module.css';
 
@@ -38,7 +40,13 @@ export default function App() {
 
   const [active, setActive] = useState<Service | null>(null);
   const [initialPath, setInitialPath] = useState('/');
+  /** Bumped to remount the iframe (re-selecting the active service reloads it at its root). */
+  const [frameNonce, setFrameNonce] = useState(0);
   const frameRef = useRef<ServiceFrameHandle>(null);
+  const activeRef = useRef<Service | null>(null);
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
 
   // ----- Routing (hash) -----
 
@@ -55,7 +63,7 @@ export default function App() {
   // Initialise from the hash once the registry has loaded.
   useEffect(() => {
     if (services.length === 0) return;
-    applyHash(parseHash(window.location.hash)); // eslint-disable-line react-hooks/set-state-in-effect
+    applyHash(parseHash(window.location.hash));
   }, [services, applyHash]);
 
   // Browser Back / Forward.
@@ -65,8 +73,9 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, [applyHash]);
 
-  /** `null` → home. Always opens a service at its root. */
+  /** `null` → home. Always opens a service at its root (re-selecting the active one reloads it there). */
   const select = useCallback((service: Service | null) => {
+    if (service && service.id === activeRef.current?.id) setFrameNonce((n) => n + 1);
     setActive(service);
     setInitialPath('/');
     window.location.hash = service ? buildHash(service.id, '/') : '#/';
@@ -123,7 +132,7 @@ export default function App() {
 
   const handleTelegramAuth = useCallback(
     async (data: TelegramAuthData) => {
-      await auth.login(data);
+      const next = await auth.login(data);
       frameRef.current?.post({ type: 'AUTH_CHANGED' });
       setLoginOpen(false);
       setLoginDismissed(true);
@@ -135,15 +144,23 @@ export default function App() {
         }
       }
       clearLoginParams();
-      if (afterLogin) select(afterLogin);
+      if (afterLogin) {
+        if (isAppLocked(next.status, next.apps, afterLogin.id)) showNotice('no-access', NO_ACCESS_NOTICE);
+        else select(afterLogin);
+      }
       setAfterLogin(null);
     },
     [auth, loginRequest, afterLogin, select],
   );
 
   const handleLogout = useCallback(async () => {
-    await auth.logout();
-    frameRef.current?.post({ type: 'AUTH_CHANGED' });
+    try {
+      await auth.logout();
+    } catch {
+      showNotice('logout-failed', 'Не удалось выйти. Попробуйте ещё раз.', 'error');
+    } finally {
+      frameRef.current?.post({ type: 'AUTH_CHANGED' });
+    }
   }, [auth]);
 
   const isLocked = useCallback(
@@ -154,9 +171,62 @@ export default function App() {
   const onLockedSelect = useCallback(
     (service: Service) => {
       if (auth.status === 'anonymous') openLogin(service);
+      else if (auth.status === 'authenticated') showNotice('no-access', 'Нет доступа');
     },
     [auth.status, openLogin],
   );
+
+  // ----- AUTH_REQUIRED from a service -----
+  //
+  // refreshSession() (navigator.locks) → re-read /me → decideAuthRequired(): signed out → login modal;
+  // session changed → AUTH_CHANGED; unchanged → «Нет доступа к сервису» if the app is locked, otherwise
+  // AUTH_CHANGED at most once per service per 10 s (no 401 ↔ AUTH_CHANGED loop). Requests that arrive
+  // while auth is still 'loading' are queued until it settles.
+
+  const authRef = useRef(auth);
+  useEffect(() => {
+    authRef.current = auth;
+  }, [auth]);
+  const pendingAuthRequired = useRef(new Set<string>());
+  const authRequiredInFlight = useRef(new Set<string>());
+  const lastAuthChangedAt = useRef(new Map<string, number>());
+
+  const postAuthChangedTo = useCallback((serviceId: string) => {
+    if (activeRef.current?.id !== serviceId) return;
+    lastAuthChangedAt.current.set(serviceId, Date.now());
+    frameRef.current?.post({ type: 'AUTH_CHANGED' });
+  }, []);
+
+  const handleAuthRequired = useCallback(
+    async (serviceId: string) => {
+      if (authRequiredInFlight.current.has(serviceId)) return;
+      authRequiredInFlight.current.add(serviceId);
+      try {
+        const before: AuthSnapshot = authRef.current;
+        await refreshSession();
+        const after = await authRef.current.refresh();
+        const action = decideAuthRequired(before, after, serviceId, Date.now(), lastAuthChangedAt.current.get(serviceId));
+        if (action.kind === 'login') openLogin();
+        else if (action.kind === 'authChanged') postAuthChangedTo(serviceId);
+        else if (action.kind === 'noAccess' && activeRef.current?.id === serviceId)
+          showNotice('no-access', NO_ACCESS_NOTICE);
+      } catch {
+        // /me failures already map to 'unavailable' inside useAuth; nothing else to do.
+      } finally {
+        authRequiredInFlight.current.delete(serviceId);
+      }
+    },
+    [openLogin, postAuthChangedTo],
+  );
+
+  // Drain AUTH_REQUIRED queued while auth was 'loading'.
+  useEffect(() => {
+    if (auth.status === 'loading' || pendingAuthRequired.current.size === 0) return;
+    const queued = [...pendingAuthRequired.current];
+    pendingAuthRequired.current.clear();
+    if (auth.status === 'unavailable') return;
+    for (const id of queued) void handleAuthRequired(id);
+  }, [auth.status, handleAuthRequired]);
 
   // ----- Messages from the active service (already origin/source/serviceId-checked) -----
 
@@ -167,10 +237,10 @@ export default function App() {
         history.replaceState(history.state, '', buildHash(msg.serviceId, msg.path));
         return;
       }
-      if (auth.status === 'anonymous') openLogin();
-      else if (auth.status === 'authenticated') frameRef.current?.post({ type: 'AUTH_CHANGED' });
+      if (auth.status === 'loading') pendingAuthRequired.current.add(msg.serviceId);
+      else if (auth.status !== 'unavailable') void handleAuthRequired(msg.serviceId);
     },
-    [auth.status, openLogin],
+    [auth.status, handleAuthRequired],
   );
 
   // ----- Render -----
@@ -207,7 +277,7 @@ export default function App() {
   } else if (active) {
     content = (
       <ServiceFrame
-        key={active.id}
+        key={`${active.id}:${frameNonce}`}
         ref={frameRef}
         service={active}
         initialPath={initialPath}

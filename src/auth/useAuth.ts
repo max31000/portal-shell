@@ -15,43 +15,47 @@ export interface AuthState {
   status: AuthStatus;
   user: AuthUser | null;
   apps: AppAccess[];
-  login: (data: TelegramAuthData) => Promise<void>;
+  /** Resolves to the new auth snapshot; rejects if the login request failed. */
+  login: (data: TelegramAuthData) => Promise<AuthSnapshot>;
+  /** Always re-reads `/me` afterwards; rejects (after that) if the logout request failed. */
   logout: () => Promise<void>;
-  /** Re-read `/me` (the server refreshes the access cookie implicitly if needed). */
-  refresh: () => Promise<void>;
+  /** Re-read `/me` (the server refreshes the access cookie implicitly if needed). Resolves to the new snapshot. */
+  refresh: () => Promise<AuthSnapshot>;
 }
 
-interface Snapshot {
+export interface AuthSnapshot {
   status: AuthStatus;
   user: AuthUser | null;
   apps: AppAccess[];
 }
 
-function fromMe(me: MeResponse): Snapshot {
+function fromMe(me: MeResponse): AuthSnapshot {
   return { status: me.user ? 'authenticated' : 'anonymous', user: me.user, apps: me.apps };
 }
 
-const UNAVAILABLE: Snapshot = { status: 'unavailable', user: null, apps: [] };
+const UNAVAILABLE: AuthSnapshot = { status: 'unavailable', user: null, apps: [] };
 
 export function useAuth(): AuthState {
-  const [snap, setSnap] = useState<Snapshot>({ status: 'loading', user: null, apps: [] });
+  const [snap, setSnap] = useState<AuthSnapshot>({ status: 'loading', user: null, apps: [] });
   const mounted = useRef(true);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
+  const load = useCallback(async (signal?: AbortSignal): Promise<AuthSnapshot> => {
+    let next: AuthSnapshot;
     try {
-      const me = await getMe(signal);
-      if (mounted.current) setSnap(fromMe(me));
+      next = fromMe(await getMe(signal));
     } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') return;
+      if (err instanceof DOMException && err.name === 'AbortError') throw err;
       // AuthUnavailableError (404, HTML fallback, network) or anything unexpected: behave as a no-auth shell.
-      if (mounted.current) setSnap(UNAVAILABLE);
+      next = UNAVAILABLE;
     }
+    if (mounted.current) setSnap(next);
+    return next;
   }, []);
 
   useEffect(() => {
     mounted.current = true;
     const ctrl = new AbortController();
-    void load(ctrl.signal);
+    load(ctrl.signal).catch(() => {});
     return () => {
       mounted.current = false;
       ctrl.abort();
@@ -59,15 +63,16 @@ export function useAuth(): AuthState {
   }, [load]);
 
   const login = useCallback(async (data: TelegramAuthData) => {
-    const me = await loginTelegram(data);
-    if (mounted.current) setSnap(fromMe(me));
+    const next = fromMe(await loginTelegram(data));
+    if (mounted.current) setSnap(next);
+    return next;
   }, []);
 
   const logout = useCallback(async () => {
     try {
       await apiLogout();
     } finally {
-      await load();
+      await load().catch(() => {});
     }
   }, [load]);
 
