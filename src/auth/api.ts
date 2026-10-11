@@ -5,19 +5,25 @@
 
 export type AccessMode = 'public' | 'invite' | 'admin';
 
+/**
+ * Client model of the signed-in user. The backend (`MeUser` in mvv42-auth) serialises
+ * `{ id: long, telegramId: long, name: string, username: string|null, photoUrl: string|null, isAdmin: bool }`;
+ * ids are normalised to strings here so JS never has to reason about 64-bit numbers.
+ */
 export interface AuthUser {
   id: string;
-  telegramId: string | number;
+  telegramId: string;
   name: string;
-  username?: string | null;
-  photoUrl?: string | null;
+  username: string | null;
+  photoUrl: string | null;
   isAdmin: boolean;
 }
 
 export interface AppAccess {
   id: string;
   anonymous: boolean;
-  access: AccessMode;
+  /** `AccessMode` today; kept as a string so a new server-side mode does not break the shell. */
+  access: AccessMode | (string & {});
   granted: boolean;
 }
 
@@ -59,25 +65,54 @@ export class AuthRequestError extends Error {
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null;
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-function isMeResponse(v: unknown): v is MeResponse {
-  if (!isRecord(v) || !Array.isArray(v.apps)) return false;
-  if (v.user !== null && (!isRecord(v.user) || typeof v.user.id !== 'string')) return false;
-  return v.apps.every((a) => isRecord(a) && typeof a.id === 'string');
+/** JSON id: the backend sends `long` numbers; tolerate strings too. */
+function toId(v: unknown): string | null {
+  if (typeof v === 'string' && v !== '') return v;
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  return null;
 }
 
-function normalizeMe(v: MeResponse): MeResponse {
-  return {
-    user: v.user,
-    apps: v.apps.map((a) => ({
-      id: a.id,
-      anonymous: !!a.anonymous,
-      access: a.access,
-      granted: !!a.granted,
-    })),
-  };
+function toNullableString(v: unknown): string | null | undefined {
+  if (v === null || v === undefined) return null;
+  return typeof v === 'string' ? v : undefined;
+}
+
+function parseUser(v: unknown): AuthUser | null | undefined {
+  if (v === null) return null;
+  if (!isRecord(v)) return undefined;
+  const id = toId(v.id);
+  const telegramId = toId(v.telegramId);
+  const username = toNullableString(v.username);
+  const photoUrl = toNullableString(v.photoUrl);
+  if (id === null || telegramId === null || typeof v.name !== 'string') return undefined;
+  if (username === undefined || photoUrl === undefined || typeof v.isAdmin !== 'boolean') return undefined;
+  return { id, telegramId, name: v.name, username, photoUrl, isAdmin: v.isAdmin };
+}
+
+function parseApp(v: unknown): AppAccess | undefined {
+  if (!isRecord(v) || typeof v.id !== 'string' || typeof v.access !== 'string') return undefined;
+  if (typeof v.anonymous !== 'boolean' || typeof v.granted !== 'boolean') return undefined;
+  return { id: v.id, anonymous: v.anonymous, access: v.access, granted: v.granted };
+}
+
+/**
+ * Validates and normalises the `/me` and `/telegram` body (`MeResponse` in mvv42-auth, camelCase JSON):
+ * `{ user: MeUser | null, apps: { id, anonymous, access, granted }[] }`. Returns null on any mismatch.
+ */
+export function parseMeResponse(v: unknown): MeResponse | null {
+  if (!isRecord(v) || !Array.isArray(v.apps)) return null;
+  const user = parseUser(v.user);
+  if (user === undefined) return null;
+  const apps: AppAccess[] = [];
+  for (const a of v.apps) {
+    const app = parseApp(a);
+    if (!app) return null;
+    apps.push(app);
+  }
+  return { user, apps };
 }
 
 /**
@@ -107,14 +142,16 @@ export async function getMe(signal?: AbortSignal): Promise<MeResponse> {
   } catch {
     throw new AuthUnavailableError(res.status, 'Not JSON');
   }
-  if (!isMeResponse(body)) throw new AuthUnavailableError(res.status, 'Unexpected /me shape');
-  return normalizeMe(body);
+  const me = parseMeResponse(body);
+  if (!me) throw new AuthUnavailableError(res.status, 'Unexpected /me shape');
+  return me;
 }
 
-async function post(path: string, body?: unknown): Promise<Response> {
+async function post(path: string, body?: unknown, signal?: AbortSignal): Promise<Response> {
   return fetch(`${AUTH_API}${path}`, {
     method: 'POST',
     credentials: 'same-origin',
+    signal,
     headers: body === undefined ? { Accept: 'application/json' } : { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -125,8 +162,9 @@ export async function loginTelegram(data: TelegramAuthData): Promise<MeResponse>
   const res = await post('/telegram', data);
   if (!res.ok) throw new AuthRequestError(res.status, `Login failed (${res.status})`);
   const body: unknown = await res.json().catch(() => null);
-  if (!isMeResponse(body)) throw new AuthRequestError(res.status, 'Unexpected login response');
-  return normalizeMe(body);
+  const me = parseMeResponse(body);
+  if (!me) throw new AuthRequestError(res.status, 'Unexpected login response');
+  return me;
 }
 
 export async function logout(): Promise<void> {
@@ -136,12 +174,26 @@ export async function logout(): Promise<void> {
 
 let inflightRefresh: Promise<boolean> | null = null;
 
+export const REFRESH_TIMEOUT_MS = 10_000;
+
+/** `AbortSignal.timeout` with a fallback for engines that lack it. */
+function timeoutSignal(ms: number): { signal: AbortSignal; dispose: () => void } {
+  if (typeof AbortSignal.timeout === 'function') return { signal: AbortSignal.timeout(ms), dispose: () => {} };
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  return { signal: ctrl.signal, dispose: () => clearTimeout(timer) };
+}
+
+/** Runs inside the lock; the timeout guarantees a hung request cannot hold the lock forever. */
 async function doRefresh(): Promise<boolean> {
+  const { signal, dispose } = timeoutSignal(REFRESH_TIMEOUT_MS);
   try {
-    const res = await post('/refresh');
+    const res = await post('/refresh', undefined, signal);
     return res.ok;
   } catch {
     return false;
+  } finally {
+    dispose();
   }
 }
 
