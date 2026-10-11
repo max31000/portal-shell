@@ -8,42 +8,9 @@ import { ServiceFrame } from './components/ServiceFrame';
 import { Toolbar } from './components/Toolbar';
 import { Welcome } from './components/Welcome';
 import type { Service } from './types';
+import { parseHash, buildHash, type HashState } from './shell/hash';
 
 const SHELL_ORIGIN = 'https://mvv42.ru';
-
-interface HashState {
-  /** Service id parsed from hash, or null for home */
-  serviceId: string | null;
-  /** Path inside the service, always starts with "/" */
-  servicePath: string;
-}
-
-/**
- * Parse the current window.location.hash.
- *
- * Examples:
- *   ""              → { serviceId: null, servicePath: "/" }
- *   "#/"            → { serviceId: null, servicePath: "/" }
- *   "#/cashpulse"   → { serviceId: "cashpulse", servicePath: "/" }
- *   "#/cashpulse/operations" → { serviceId: "cashpulse", servicePath: "/operations" }
- */
-function parseHash(): HashState {
-  // Remove the leading '#'
-  const hash = window.location.hash.replace(/^#/, '') || '/';
-  // hash now looks like "/" or "/cashpulse" or "/cashpulse/operations"
-  const parts = hash.split('/').filter(Boolean); // ["cashpulse", "operations"]
-  if (parts.length === 0) {
-    return { serviceId: null, servicePath: '/' };
-  }
-  const [serviceId, ...rest] = parts;
-  const servicePath = rest.length > 0 ? '/' + rest.join('/') : '/';
-  return { serviceId, servicePath };
-}
-
-function buildHash(serviceId: string, servicePath: string): string {
-  const path = servicePath === '/' ? '' : servicePath;
-  return `#/${serviceId}${path}`;
-}
 
 export default function App() {
   const { services, loading, error } = useRegistry();
@@ -72,13 +39,13 @@ export default function App() {
   // Initialise from hash on first load (intentional — runs once when registry loads)
   useEffect(() => {
     if (services.length === 0) return;
-    applyHash(parseHash()); // eslint-disable-line react-hooks/set-state-in-effect
+    applyHash(parseHash(window.location.hash)); // eslint-disable-line react-hooks/set-state-in-effect
   }, [services, applyHash]);
 
   // Handle browser Back / Forward (hashchange fires for hash navigation)
   useEffect(() => {
     function onHashChange() {
-      applyHash(parseHash());
+      applyHash(parseHash(window.location.hash));
     }
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
