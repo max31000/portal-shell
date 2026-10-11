@@ -6,7 +6,7 @@ import { useRegistry } from './useRegistry';
 import { Sidebar } from './components/Sidebar';
 import { ServiceFrame } from './components/ServiceFrame';
 import { Toolbar } from './components/Toolbar';
-import { Welcome } from './components/Welcome';
+import { Home } from './components/Home';
 import type { Service } from './types';
 import { parseHash, buildHash, type HashState } from './shell/hash';
 
@@ -129,7 +129,7 @@ export default function App() {
         {active ? (
           <ServiceFrame service={active} initialPath={initialPath} />
         ) : (
-          <Welcome services={services} onSelect={selectService} />
+          <Home services={services} onSelect={selectService} />
         )}
       </AppShell.Main>
     </AppShell>
