@@ -35,3 +35,12 @@ export function buildHash(serviceId: string, servicePath: string): string {
   const path = servicePath === '/' ? '' : servicePath.startsWith('/') ? servicePath : '/' + servicePath;
   return `#/${serviceId}${path}`;
 }
+
+/**
+ * service.path = "/cashpulse/" (always trailing slash), initialPath = "/operations" or "/"
+ * → "/cashpulse/operations" or "/cashpulse/".
+ */
+export function buildFrameSrc(servicePath: string, initialPath: string): string {
+  const base = servicePath.replace(/\/$/, '');
+  return base + (initialPath.startsWith('/') ? initialPath : '/' + initialPath);
+}

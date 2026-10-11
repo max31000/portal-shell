@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { AppShell, Drawer, Center, Loader, Text, Stack, Alert } from '@mantine/core';
+import { useComputedColorScheme, AppShell, Drawer, Center, Loader, Text, Stack, Alert } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { IconAlertCircle } from '@tabler/icons-react';
 import { useRegistry } from './useRegistry';
@@ -8,12 +8,12 @@ import { ServiceFrame } from './components/ServiceFrame';
 import { Toolbar } from './components/Toolbar';
 import { Home } from './components/Home';
 import type { Service } from './types';
+import type { AuthRequiredMessage, NavigateMessage } from './shell/messages';
 import { parseHash, buildHash, type HashState } from './shell/hash';
-
-const SHELL_ORIGIN = 'https://mvv42.ru';
 
 export default function App() {
   const { services, loading, error } = useRegistry();
+  const scheme = useComputedColorScheme('light');
   const [active, setActive] = useState<Service | null>(null);
   const [initialPath, setInitialPath] = useState<string>('/');
   const [navOpened, { toggle: toggleNav, close: closeNav }] = useDisclosure(false);
@@ -62,21 +62,12 @@ export default function App() {
     [closeNav],
   );
 
-  // Listen for NAVIGATE postMessage from iframe → update hash
-  useEffect(() => {
-    function onMessage(e: MessageEvent) {
-      if (e.origin !== SHELL_ORIGIN) return;
-      const data = e.data as { type?: string; serviceId?: string; path?: string };
-      if (data?.type !== 'NAVIGATE' || !data.serviceId || !data.path) return;
-      if (data.serviceId !== activeIdRef.current) return;
-
-      // Update hash without triggering hashchange (replaceState on hash)
-      const newHash = buildHash(data.serviceId, data.path);
-      // Use replaceState so Back button skips over intermediate navigation steps
-      history.replaceState(null, '', newHash);
+  // Validated messages from the active service iframe (origin + source + serviceId checked in ServiceFrame).
+  const onServiceMessage = useCallback((msg: NavigateMessage | AuthRequiredMessage) => {
+    if (msg.type === 'NAVIGATE') {
+      // replaceState: Back skips intermediate in-service steps and no hashchange fires.
+      history.replaceState(null, '', buildHash(msg.serviceId, msg.path));
     }
-    window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
   }, []);
 
   if (loading) {
@@ -127,7 +118,13 @@ export default function App() {
 
       <AppShell.Main style={{ height: '100dvh', paddingTop: 48 }}>
         {active ? (
-          <ServiceFrame service={active} initialPath={initialPath} />
+          <ServiceFrame
+            key={active.id}
+            service={active}
+            initialPath={initialPath}
+            scheme={scheme}
+            onServiceMessage={onServiceMessage}
+          />
         ) : (
           <Home services={services} onSelect={selectService} />
         )}

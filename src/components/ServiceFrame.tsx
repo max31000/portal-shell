@@ -1,118 +1,143 @@
-import { useState, useEffect, useRef } from 'react';
-import { Box, Center, Loader, Text, Button, Stack } from '@mantine/core';
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
+import { IconArrowUpRight, IconRefresh } from '@tabler/icons-react';
 import type { Service } from '../types';
+import {
+  acceptInbound,
+  postToFrame,
+  type AuthRequiredMessage,
+  type ColorScheme,
+  type NavigateMessage,
+  type OutboundMessage,
+} from '../shell/messages';
+import { buildFrameSrc } from '../shell/hash';
+import { AppIcon } from './AppIcon';
+import classes from './ServiceFrame.module.css';
+import ui from './ui.module.css';
 
 const TIMEOUT_MS = 15_000;
 
+export interface ServiceFrameHandle {
+  /** Post a shell → service message to the current iframe. */
+  post: (msg: OutboundMessage) => void;
+}
+
 interface ServiceFrameProps {
   service: Service;
-  /**
-   * Initial path inside the service (relative to service root).
-   * E.g. "/operations" or "/" (default).
-   * Combined with service.path to build the iframe src.
-   */
+  /** Path inside the service ("/" or "/operations?x=1"). */
   initialPath?: string;
+  /** Resolved colour scheme (never 'auto'); pushed to the service as THEME. */
+  scheme: ColorScheme;
+  /** Validated NAVIGATE / AUTH_REQUIRED from this service's iframe. */
+  onServiceMessage?: (msg: NavigateMessage | AuthRequiredMessage) => void;
+  ref?: Ref<ServiceFrameHandle>;
 }
 
-/**
- * Builds the full src URL for the iframe.
- * service.path = "/cashpulse/" (always has trailing slash)
- * initialPath  = "/operations" or "/"
- * result       = "/cashpulse/operations" or "/cashpulse/"
- */
-function buildSrc(servicePath: string, initialPath: string): string {
-  const base = servicePath.replace(/\/$/, ''); // "/cashpulse"
-  const path = initialPath === '/' ? '/' : initialPath;
-  return base + path; // "/cashpulse/operations" or "/cashpulse/"
-}
+type LoadState = 'loading' | 'loaded' | 'timeout';
 
-export function ServiceFrame({ service, initialPath = '/' }: ServiceFrameProps) {
-  const [loading, setLoading] = useState(true);
-  const [timedOut, setTimedOut] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+/** Renders one service. Mount with `key={service.id}` so switching services starts fresh. */
+export function ServiceFrame({ service, initialPath = '/', scheme, onServiceMessage, ref }: ServiceFrameProps) {
+  const [state, setState] = useState<LoadState>('loading');
+  const [attempt, setAttempt] = useState(0);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  const src = buildSrc(service.path, initialPath);
+  const src = buildFrameSrc(service.path, initialPath);
 
-  // Reset loading state when service changes (synchronous update during render,
-  // per React docs: react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
-  const [prevServiceId, setPrevServiceId] = useState(service.id);
-  if (service.id !== prevServiceId) {
-    setPrevServiceId(service.id);
-    setLoading(true);
-    setTimedOut(false);
+  // A new src (e.g. Back/Forward inside the service) is a new load.
+  const [prevSrc, setPrevSrc] = useState(src);
+  if (src !== prevSrc) {
+    setPrevSrc(src);
+    setState('loading');
   }
 
-  // Set up load timeout
+  const post = useCallback((msg: OutboundMessage) => {
+    postToFrame(iframeRef.current?.contentWindow, msg);
+  }, []);
+
+  useImperativeHandle(ref, () => ({ post }), [post]);
+
+  // Load timeout, restarted on retry or when the src changes.
   useEffect(() => {
     const timer = setTimeout(() => {
-      setTimedOut(true);
-      setLoading(false);
+      setState((s) => (s === 'loading' ? 'timeout' : s));
     }, TIMEOUT_MS);
-    timerRef.current = timer;
     return () => clearTimeout(timer);
-  }, [service.id]);
+  }, [attempt, src]);
+
+  // Push theme changes to the running service.
+  useEffect(() => {
+    post({ type: 'THEME', scheme });
+  }, [scheme, post]);
+
+  // Inbound messages: only from this iframe, our origin, and this service id.
+  useEffect(() => {
+    function onMessage(e: MessageEvent) {
+      const msg = acceptInbound(e, {
+        origin: window.location.origin,
+        source: iframeRef.current?.contentWindow ?? null,
+        serviceId: service.id,
+      });
+      if (!msg) return;
+      if (msg.type === 'READY') {
+        post({ type: 'THEME', scheme });
+        return;
+      }
+      onServiceMessage?.(msg);
+    }
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [service.id, scheme, post, onServiceMessage]);
 
   function handleLoad() {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    setLoading(false);
-    setTimedOut(false);
+    setState('loaded');
+    // Services that predate the READY handshake still get the theme.
+    post({ type: 'THEME', scheme });
+  }
+
+  function retry() {
+    setState('loading');
+    setAttempt((n) => n + 1);
   }
 
   return (
-    <Box style={{ position: 'relative', width: '100%', height: '100%' }}>
-      {/* key ensures full remount on service change */}
+    <div className={classes.root}>
+      <div className={classes.progress} data-state={state} aria-hidden="true" />
+      {state === 'loading' && (
+        <span className="visually-hidden" role="status">
+          Загрузка {service.name}…
+        </span>
+      )}
+
       <iframe
-        key={service.id}
+        key={attempt}
+        ref={iframeRef}
         src={src}
         title={service.name}
         onLoad={handleLoad}
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
-        style={{
-          width: '100%',
-          height: '100%',
-          border: 'none',
-          display: timedOut ? 'none' : 'block',
-        }}
+        className={classes.frame}
+        data-hidden={state === 'timeout' || undefined}
       />
 
-      {/* Loading overlay */}
-      {loading && !timedOut && (
-        <Center
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: 'var(--mantine-color-body)',
-            zIndex: 10,
-          }}
-        >
-          <Stack align="center" gap="md">
-            <Loader size="lg" color={service.color} />
-            <Text c="dimmed" size="sm">
-              Загрузка {service.name}…
-            </Text>
-          </Stack>
-        </Center>
+      {state === 'timeout' && (
+        <div className={classes.timeout} role="alert">
+          <AppIcon icon={service.icon} name={service.name} color={service.color} size={56} />
+          <h2 className={classes.timeoutTitle}>Сервис не отвечает</h2>
+          <p className={classes.timeoutText}>
+            {service.name} не загрузился за {TIMEOUT_MS / 1000} секунд. Попробуйте ещё раз или откройте его
+            отдельно.
+          </p>
+          <div className={classes.actions}>
+            <button type="button" className={ui.primaryButton} onClick={retry}>
+              <IconRefresh size={16} stroke={2} aria-hidden="true" />
+              Повторить
+            </button>
+            <a className={ui.secondaryButton} href={src} target="_blank" rel="noopener">
+              Открыть отдельно
+              <IconArrowUpRight size={16} stroke={2} aria-hidden="true" />
+            </a>
+          </div>
+        </div>
       )}
-
-      {/* Timeout message */}
-      {timedOut && (
-        <Center style={{ height: '100%' }}>
-          <Stack align="center" gap="md">
-            <Text size="xl">{service.icon}</Text>
-            <Text fw={500}>Сервис не отвечает</Text>
-            <Text c="dimmed" size="sm" ta="center" maw={320}>
-              {service.name} не загрузился за {TIMEOUT_MS / 1000} секунд.
-            </Text>
-            <Button
-              variant="light"
-              color={service.color}
-              onClick={() => window.open(src, '_blank')}
-            >
-              Открыть напрямую
-            </Button>
-          </Stack>
-        </Center>
-      )}
-    </Box>
+    </div>
   );
 }
