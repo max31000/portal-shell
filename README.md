@@ -40,6 +40,8 @@ UI catalogue only — who may use what lives in the `apps` table of `mvv42-auth`
 - `icon` — a [Tabler](https://tabler.io/icons) icon name from the allow-list in `src/components/icons.ts`
   (add a name there when a new app needs one). Unknown names fall back to the first letter of `name`.
 - `color` — used only for the service's icon tile.
+- `auth` — set to `"shared"` once the service uses mvv42-auth (migration Ф2). Only then may the shell lock its
+  tile / show login for it. Absent = the service still has its own login and is never locked by the shell.
 
 Vite serves `public/registry.json` in dev and copies it into `dist/` on build; it is fetched with `no-cache`.
 

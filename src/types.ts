@@ -10,6 +10,11 @@ export interface Service {
   path: string;
   /** Tile colour (only used on the service icon). */
   color: string;
+  /**
+   * `"shared"` once the service uses mvv42-auth (shell may lock its tile and handle login).
+   * Absent = the service still has its own login: the shell never locks it.
+   */
+  auth?: 'shared';
 }
 
 export interface Registry {

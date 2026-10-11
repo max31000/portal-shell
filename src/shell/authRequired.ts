@@ -35,7 +35,8 @@ export function decideAuthRequired(
   if (after.status === 'anonymous') return { kind: 'login' };
   if (after.status !== 'authenticated') return { kind: 'ignore' };
   if (authFingerprint(before) !== authFingerprint(after)) return { kind: 'authChanged' };
-  if (isAppLocked(after.status, after.apps, serviceId)) return { kind: 'noAccess' };
+  // AUTH_REQUIRED is only sent by services on shared auth (mvv42 SDK).
+  if (isAppLocked(after.status, after.apps, { id: serviceId, auth: 'shared' })) return { kind: 'noAccess' };
   if (lastAuthChangedAt !== undefined && now - lastAuthChangedAt < AUTH_CHANGED_MIN_INTERVAL_MS) {
     return { kind: 'ignore' };
   }

@@ -84,10 +84,18 @@ export function useAuth(): AuthState {
   );
 }
 
-/** Lock rule (spec §9.6): only when auth is up, the app needs login, and the user has no access. */
-export function isAppLocked(status: AuthStatus, apps: AppAccess[], serviceId: string): boolean {
+/**
+ * Lock rule (spec §9.6): only when auth is up, the service is on shared auth (registry `auth: "shared"`),
+ * the app needs login, and the user has no access. Services still on their own login are never locked.
+ */
+export function isAppLocked(
+  status: AuthStatus,
+  apps: AppAccess[],
+  service: { id: string; auth?: 'shared' },
+): boolean {
   if (status !== 'anonymous' && status !== 'authenticated') return false;
-  const app = apps.find((a) => a.id === serviceId);
+  if (service.auth !== 'shared') return false;
+  const app = apps.find((a) => a.id === service.id);
   if (!app) return false;
   return !app.anonymous && !app.granted;
 }

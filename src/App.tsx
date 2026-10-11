@@ -145,7 +145,7 @@ export default function App() {
       }
       clearLoginParams();
       if (afterLogin) {
-        if (isAppLocked(next.status, next.apps, afterLogin.id)) showNotice('no-access', NO_ACCESS_NOTICE);
+        if (isAppLocked(next.status, next.apps, afterLogin)) showNotice('no-access', NO_ACCESS_NOTICE);
         else select(afterLogin);
       }
       setAfterLogin(null);
@@ -164,7 +164,7 @@ export default function App() {
   }, [auth]);
 
   const isLocked = useCallback(
-    (service: Service) => isAppLocked(auth.status, auth.apps, service.id),
+    (service: Service) => isAppLocked(auth.status, auth.apps, service),
     [auth.status, auth.apps],
   );
 

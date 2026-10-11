@@ -144,14 +144,16 @@ describe('isAppLocked', () => {
     { id: 'mine', anonymous: false, access: 'invite' as const, granted: true },
   ];
   it('never locks when auth is unavailable or loading', () => {
-    expect(isAppLocked('unavailable', apps, 'closed')).toBe(false);
-    expect(isAppLocked('loading', apps, 'closed')).toBe(false);
+    expect(isAppLocked('unavailable', apps, { id: 'closed', auth: 'shared' })).toBe(false);
+    expect(isAppLocked('loading', apps, { id: 'closed', auth: 'shared' })).toBe(false);
   });
   it('locks only !anonymous && !granted', () => {
-    expect(isAppLocked('anonymous', apps, 'open')).toBe(false);
-    expect(isAppLocked('anonymous', apps, 'closed')).toBe(true);
-    expect(isAppLocked('authenticated', apps, 'mine')).toBe(false);
-    expect(isAppLocked('authenticated', apps, 'unknown')).toBe(false);
+    expect(isAppLocked('anonymous', apps, { id: 'open', auth: 'shared' })).toBe(false);
+    expect(isAppLocked('anonymous', apps, { id: 'closed', auth: 'shared' })).toBe(true);
+    // still on its own login → never locked by the shell
+    expect(isAppLocked('anonymous', apps, { id: 'closed' })).toBe(false);
+    expect(isAppLocked('authenticated', apps, { id: 'mine', auth: 'shared' })).toBe(false);
+    expect(isAppLocked('authenticated', apps, { id: 'unknown', auth: 'shared' })).toBe(false);
   });
 });
 
