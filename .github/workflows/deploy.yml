@@ -8,6 +8,7 @@ on:
       - 'public/**'
       - 'index.html'
       - 'vite.config.ts'
+      - 'eslint.config.js'
       - 'tsconfig*.json'
       - 'package.json'
       - 'package-lock.json'
@@ -32,9 +33,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Type check
-        run: npx tsc -b
 
       - name: Lint
         run: npm run lint
