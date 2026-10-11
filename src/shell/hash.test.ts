@@ -18,6 +18,29 @@ describe('parseHash', () => {
   });
 });
 
+describe('parseHash dot segments', () => {
+  it.each([
+    ['#/cashpulse/..', 'cashpulse'],
+    ['#/cashpulse/../auth/api/me', 'cashpulse'],
+    ['#/cashpulse/a/./b', 'cashpulse'],
+    ['#/cashpulse/%2e%2e/auth', 'cashpulse'],
+    ['#/cashpulse/%2E%2E/auth', 'cashpulse'],
+    ['#/cashpulse/.%2e/auth', 'cashpulse'],
+    ['#/cashpulse/%2e', 'cashpulse'],
+    ['#/cashpulse/../x?y=1', 'cashpulse'],
+  ])('%s → service root', (hash, serviceId) => {
+    expect(parseHash(hash)).toEqual({ serviceId, servicePath: '/' });
+  });
+
+  it.each(['#/..', '#/.', '#/%2e%2e/cashpulse', '#/../cashpulse'])('%s → home', (hash) => {
+    expect(parseHash(hash)).toEqual({ serviceId: null, servicePath: '/' });
+  });
+
+  it('keeps segments that merely contain dots', () => {
+    expect(parseHash('#/cashpulse/a.b/...')).toEqual({ serviceId: 'cashpulse', servicePath: '/a.b/...' });
+  });
+});
+
 describe('buildHash', () => {
   it('omits root path', () => {
     expect(buildHash('cashpulse', '/')).toBe('#/cashpulse');

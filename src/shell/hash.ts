@@ -8,12 +8,20 @@
  *   "#/cashpulse/operations"    → { serviceId: "cashpulse", servicePath: "/operations" }
  *   "#/cashpulse?tab=2"         → { serviceId: "cashpulse", servicePath: "/?tab=2" }
  *   "#/cashpulse/ops?tab=2"     → { serviceId: "cashpulse", servicePath: "/ops?tab=2" }
+ *   "#/cashpulse/../auth"       → { serviceId: "cashpulse", servicePath: "/" }   (dot segments → service root)
+ *   "#/../x"                    → { serviceId: null, servicePath: "/" }
  */
 export interface HashState {
   /** Service id parsed from hash, or null for home. */
   serviceId: string | null;
   /** Path inside the service; always starts with "/" and may carry a query string. */
   servicePath: string;
+}
+
+/** `.` / `..`, also percent-encoded (`%2e`, `.%2E`, …): would let the iframe src escape the service path. */
+function isDotSegment(segment: string): boolean {
+  const normalised = segment.replace(/%2e/gi, '.');
+  return normalised === '.' || normalised === '..';
 }
 
 export function parseHash(hash: string): HashState {
@@ -27,6 +35,8 @@ export function parseHash(hash: string): HashState {
     return { serviceId: null, servicePath: '/' };
   }
   const [serviceId, ...rest] = parts;
+  if (isDotSegment(serviceId)) return { serviceId: null, servicePath: '/' };
+  if (rest.some(isDotSegment)) return { serviceId, servicePath: '/' };
   const path = rest.length > 0 ? '/' + rest.join('/') : '/';
   return { serviceId, servicePath: path + query };
 }
