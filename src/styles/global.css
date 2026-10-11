@@ -1,0 +1,79 @@
+/* Global base styles. Tokens live in tokens.css. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-15);
+  line-height: var(--lh-body);
+  letter-spacing: var(--tracking-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-optical-sizing: auto;
+}
+
+/* Bridge: make Mantine primitives read our tokens. */
+:root[data-mantine-color-scheme] {
+  --mantine-color-body: var(--bg);
+  --mantine-color-text: var(--text);
+  --mantine-color-dimmed: var(--text-3);
+  --mantine-color-default: var(--surface);
+  --mantine-color-default-hover: var(--surface-2);
+  --mantine-color-default-color: var(--text);
+  --mantine-color-default-border: var(--border-strong);
+  --mantine-color-placeholder: var(--text-3);
+  --mantine-color-anchor: var(--text);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--text) 16%, transparent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+/* Quiet scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

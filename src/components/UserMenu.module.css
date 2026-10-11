@@ -1,0 +1,77 @@
+.trigger {
+  border-radius: var(--r-full);
+}
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border-radius: var(--r-full);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0;
+  object-fit: cover;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-backdrop);
+}
+
+.dropdown {
+  padding: var(--sp-1);
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px var(--border),
+    var(--shadow-lg);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+}
+
+.who {
+  min-width: 0;
+}
+
+.name {
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.handle {
+  font-size: var(--fs-12);
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.divider {
+  margin: var(--sp-1) 0;
+  border-color: var(--border);
+}
+
+.item {
+  height: 34px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-13);
+  color: var(--text);
+}
+
+.item[data-hovered] {
+  background: var(--surface-hover);
+}

@@ -1,170 +1,301 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { AppShell, Drawer, Center, Loader, Text, Stack, Alert } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
-import { IconAlertCircle } from '@tabler/icons-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useComputedColorScheme } from '@mantine/core';
 import { useRegistry } from './useRegistry';
-import { Sidebar } from './components/Sidebar';
-import { ServiceFrame } from './components/ServiceFrame';
-import { Toolbar } from './components/Toolbar';
-import { Welcome } from './components/Welcome';
+import { useAuth, isAppLocked, type AuthSnapshot } from './auth/useAuth';
+import { sanitizeReturnUrl } from './auth/returnUrl';
+import { refreshSession, type TelegramAuthData } from './auth/api';
+import { TopBar } from './components/TopBar';
+import { AppLauncher } from './components/AppLauncher';
+import { Home } from './components/Home';
+import { ServiceFrame, type ServiceFrameHandle } from './components/ServiceFrame';
+import { LoginModal } from './components/LoginModal';
+import { SignInButton, UserMenu } from './components/UserMenu';
+import { buildHash, parseHash, type HashState } from './shell/hash';
+import type { AuthRequiredMessage, NavigateMessage } from './shell/messages';
+import { decideAuthRequired } from './shell/authRequired';
+import { NO_ACCESS_NOTICE, showNotice } from './shell/notice';
 import type { Service } from './types';
+import classes from './App.module.css';
 
-const SHELL_ORIGIN = 'https://mvv42.ru';
+const THEME_COLOR = { light: '#fafafa', dark: '#0b0b0c' } as const;
 
-interface HashState {
-  /** Service id parsed from hash, or null for home */
-  serviceId: string | null;
-  /** Path inside the service, always starts with "/" */
-  servicePath: string;
+/** `?login=1&return=/x` — set by standalone apps (web SDK `requestLogin`). */
+function readLoginRequest(): { requested: boolean; returnTo: string | null } {
+  const params = new URLSearchParams(window.location.search);
+  return { requested: params.get('login') === '1', returnTo: params.get('return') };
 }
 
-/**
- * Parse the current window.location.hash.
- *
- * Examples:
- *   ""              → { serviceId: null, servicePath: "/" }
- *   "#/"            → { serviceId: null, servicePath: "/" }
- *   "#/cashpulse"   → { serviceId: "cashpulse", servicePath: "/" }
- *   "#/cashpulse/operations" → { serviceId: "cashpulse", servicePath: "/operations" }
- */
-function parseHash(): HashState {
-  // Remove the leading '#'
-  const hash = window.location.hash.replace(/^#/, '') || '/';
-  // hash now looks like "/" or "/cashpulse" or "/cashpulse/operations"
-  const parts = hash.split('/').filter(Boolean); // ["cashpulse", "operations"]
-  if (parts.length === 0) {
-    return { serviceId: null, servicePath: '/' };
-  }
-  const [serviceId, ...rest] = parts;
-  const servicePath = rest.length > 0 ? '/' + rest.join('/') : '/';
-  return { serviceId, servicePath };
-}
-
-function buildHash(serviceId: string, servicePath: string): string {
-  const path = servicePath === '/' ? '' : servicePath;
-  return `#/${serviceId}${path}`;
+function clearLoginParams() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has('login') && !url.searchParams.has('return')) return;
+  url.searchParams.delete('login');
+  url.searchParams.delete('return');
+  history.replaceState(history.state, '', url.pathname + url.search + url.hash);
 }
 
 export default function App() {
   const { services, loading, error } = useRegistry();
-  const [active, setActive] = useState<Service | null>(null);
-  const [initialPath, setInitialPath] = useState<string>('/');
-  const [navOpened, { toggle: toggleNav, close: closeNav }] = useDisclosure(false);
+  const scheme = useComputedColorScheme('light');
+  const auth = useAuth();
 
-  const activeIdRef = useRef<string | null>(null);
+  const [active, setActive] = useState<Service | null>(null);
+  const [initialPath, setInitialPath] = useState('/');
+  /** Bumped to remount the iframe (re-selecting the active service reloads it at its root). */
+  const [frameNonce, setFrameNonce] = useState(0);
+  const frameRef = useRef<ServiceFrameHandle>(null);
+  const activeRef = useRef<Service | null>(null);
   useEffect(() => {
-    activeIdRef.current = active?.id ?? null;
+    activeRef.current = active;
   }, [active]);
 
-  /** Resolve service from parsed hash once registry is loaded */
+  // ----- Routing (hash) -----
+
   const applyHash = useCallback(
     (state: HashState) => {
       if (services.length === 0) return;
-      const found = state.serviceId
-        ? (services.find((s) => s.id === state.serviceId) ?? null)
-        : null;
+      const found = state.serviceId ? (services.find((s) => s.id === state.serviceId) ?? null) : null;
       setActive(found);
       setInitialPath(state.servicePath);
     },
     [services],
   );
 
-  // Initialise from hash on first load (intentional — runs once when registry loads)
+  // Initialise from the hash once the registry has loaded.
   useEffect(() => {
     if (services.length === 0) return;
-    applyHash(parseHash()); // eslint-disable-line react-hooks/set-state-in-effect
+    applyHash(parseHash(window.location.hash));
   }, [services, applyHash]);
 
-  // Handle browser Back / Forward (hashchange fires for hash navigation)
+  // Browser Back / Forward.
   useEffect(() => {
-    function onHashChange() {
-      applyHash(parseHash());
-    }
+    const onHashChange = () => applyHash(parseHash(window.location.hash));
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, [applyHash]);
 
-  // Select a service (sidebar / welcome card click) — always at service root
-  const selectService = useCallback(
-    (service: Service) => {
-      setActive(service);
-      setInitialPath('/');
-      closeNav();
-      window.location.hash = buildHash(service.id, '/');
-    },
-    [closeNav],
-  );
-
-  // Listen for NAVIGATE postMessage from iframe → update hash
-  useEffect(() => {
-    function onMessage(e: MessageEvent) {
-      if (e.origin !== SHELL_ORIGIN) return;
-      const data = e.data as { type?: string; serviceId?: string; path?: string };
-      if (data?.type !== 'NAVIGATE' || !data.serviceId || !data.path) return;
-      if (data.serviceId !== activeIdRef.current) return;
-
-      // Update hash without triggering hashchange (replaceState on hash)
-      const newHash = buildHash(data.serviceId, data.path);
-      // Use replaceState so Back button skips over intermediate navigation steps
-      history.replaceState(null, '', newHash);
-    }
-    window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
+  /** `null` → home. Always opens a service at its root (re-selecting the active one reloads it there). */
+  const select = useCallback((service: Service | null) => {
+    if (service && service.id === activeRef.current?.id) setFrameNonce((n) => n + 1);
+    setActive(service);
+    setInitialPath('/');
+    window.location.hash = service ? buildHash(service.id, '/') : '#/';
   }, []);
 
-  if (loading) {
-    return (
-      <Center h="100vh">
-        <Stack align="center" gap="md">
-          <Loader size="lg" />
-          <Text c="dimmed">Загрузка портала...</Text>
-        </Stack>
-      </Center>
-    );
-  }
+  // ----- Document chrome -----
 
-  if (error) {
-    return (
-      <Center h="100vh" p="xl">
-        <Alert icon={<IconAlertCircle size={18} />} color="red" title="Ошибка загрузки" maw={420}>
-          Не удалось загрузить registry.json: {error}
-        </Alert>
-      </Center>
+  useEffect(() => {
+    document.title = active ? `${active.name} · mvv42` : 'mvv42';
+  }, [active]);
+
+  useEffect(() => {
+    document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
+      m.setAttribute('content', THEME_COLOR[scheme]);
+      m.removeAttribute('media');
+    });
+  }, [scheme]);
+
+  // ----- Auth & login -----
+
+  const [loginRequest] = useState(readLoginRequest);
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [loginDismissed, setLoginDismissed] = useState(false);
+  const [afterLogin, setAfterLogin] = useState<Service | null>(null);
+
+  const authAvailable = auth.status === 'anonymous' || auth.status === 'authenticated';
+  // `?login=1` opens the modal as soon as we know the visitor is signed out.
+  const modalOpened =
+    auth.status === 'anonymous' && (loginOpen || (loginRequest.requested && !loginDismissed));
+
+  // `?login=1` while already signed in → go straight back; auth unavailable → just drop the params.
+  useEffect(() => {
+    if (!loginRequest.requested) return;
+    if (auth.status === 'authenticated') {
+      const target = sanitizeReturnUrl(loginRequest.returnTo);
+      if (loginRequest.returnTo && target !== '/') window.location.replace(target);
+      else clearLoginParams();
+    } else if (auth.status === 'unavailable') {
+      clearLoginParams();
+    }
+  }, [auth.status, loginRequest]);
+
+  const openLogin = useCallback((then: Service | null = null) => {
+    setAfterLogin(then);
+    setLoginOpen(true);
+  }, []);
+
+  const closeLogin = useCallback(() => {
+    setLoginOpen(false);
+    setLoginDismissed(true);
+    setAfterLogin(null);
+    clearLoginParams();
+  }, []);
+
+  const handleTelegramAuth = useCallback(
+    async (data: TelegramAuthData) => {
+      const next = await auth.login(data);
+      frameRef.current?.post({ type: 'AUTH_CHANGED' });
+      setLoginOpen(false);
+      setLoginDismissed(true);
+      if (loginRequest.requested && loginRequest.returnTo) {
+        const target = sanitizeReturnUrl(loginRequest.returnTo);
+        if (target !== '/') {
+          window.location.replace(target);
+          return;
+        }
+      }
+      clearLoginParams();
+      if (afterLogin) {
+        if (isAppLocked(next.status, next.apps, afterLogin.id)) showNotice('no-access', NO_ACCESS_NOTICE);
+        else select(afterLogin);
+      }
+      setAfterLogin(null);
+    },
+    [auth, loginRequest, afterLogin, select],
+  );
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await auth.logout();
+    } catch {
+      showNotice('logout-failed', 'Не удалось выйти. Попробуйте ещё раз.', 'error');
+    } finally {
+      frameRef.current?.post({ type: 'AUTH_CHANGED' });
+    }
+  }, [auth]);
+
+  const isLocked = useCallback(
+    (service: Service) => isAppLocked(auth.status, auth.apps, service.id),
+    [auth.status, auth.apps],
+  );
+
+  const onLockedSelect = useCallback(
+    (service: Service) => {
+      if (auth.status === 'anonymous') openLogin(service);
+      else if (auth.status === 'authenticated') showNotice('no-access', 'Нет доступа');
+    },
+    [auth.status, openLogin],
+  );
+
+  // ----- AUTH_REQUIRED from a service -----
+  //
+  // refreshSession() (navigator.locks) → re-read /me → decideAuthRequired(): signed out → login modal;
+  // session changed → AUTH_CHANGED; unchanged → «Нет доступа к сервису» if the app is locked, otherwise
+  // AUTH_CHANGED at most once per service per 10 s (no 401 ↔ AUTH_CHANGED loop). Requests that arrive
+  // while auth is still 'loading' are queued until it settles.
+
+  const authRef = useRef(auth);
+  useEffect(() => {
+    authRef.current = auth;
+  }, [auth]);
+  const pendingAuthRequired = useRef(new Set<string>());
+  const authRequiredInFlight = useRef(new Set<string>());
+  const lastAuthChangedAt = useRef(new Map<string, number>());
+
+  const postAuthChangedTo = useCallback((serviceId: string) => {
+    if (activeRef.current?.id !== serviceId) return;
+    lastAuthChangedAt.current.set(serviceId, Date.now());
+    frameRef.current?.post({ type: 'AUTH_CHANGED' });
+  }, []);
+
+  const handleAuthRequired = useCallback(
+    async (serviceId: string) => {
+      if (authRequiredInFlight.current.has(serviceId)) return;
+      authRequiredInFlight.current.add(serviceId);
+      try {
+        const before: AuthSnapshot = authRef.current;
+        await refreshSession();
+        const after = await authRef.current.refresh();
+        const action = decideAuthRequired(before, after, serviceId, Date.now(), lastAuthChangedAt.current.get(serviceId));
+        if (action.kind === 'login') openLogin();
+        else if (action.kind === 'authChanged') postAuthChangedTo(serviceId);
+        else if (action.kind === 'noAccess' && activeRef.current?.id === serviceId)
+          showNotice('no-access', NO_ACCESS_NOTICE);
+      } catch {
+        // /me failures already map to 'unavailable' inside useAuth; nothing else to do.
+      } finally {
+        authRequiredInFlight.current.delete(serviceId);
+      }
+    },
+    [openLogin, postAuthChangedTo],
+  );
+
+  // Drain AUTH_REQUIRED queued while auth was 'loading'.
+  useEffect(() => {
+    if (auth.status === 'loading' || pendingAuthRequired.current.size === 0) return;
+    const queued = [...pendingAuthRequired.current];
+    pendingAuthRequired.current.clear();
+    if (auth.status === 'unavailable') return;
+    for (const id of queued) void handleAuthRequired(id);
+  }, [auth.status, handleAuthRequired]);
+
+  // ----- Messages from the active service (already origin/source/serviceId-checked) -----
+
+  const onServiceMessage = useCallback(
+    (msg: NavigateMessage | AuthRequiredMessage) => {
+      if (msg.type === 'NAVIGATE') {
+        // replaceState: Back skips intermediate in-service steps and no hashchange fires.
+        history.replaceState(history.state, '', buildHash(msg.serviceId, msg.path));
+        return;
+      }
+      if (auth.status === 'loading') pendingAuthRequired.current.add(msg.serviceId);
+      else if (auth.status !== 'unavailable') void handleAuthRequired(msg.serviceId);
+    },
+    [auth.status, handleAuthRequired],
+  );
+
+  // ----- Render -----
+
+  const userSlot = !authAvailable ? undefined : auth.user ? (
+    <UserMenu user={auth.user} onLogout={() => void handleLogout()} />
+  ) : (
+    <SignInButton onClick={() => openLogin()} />
+  );
+
+  const launcher = (
+    <AppLauncher
+      services={services}
+      activeId={active?.id ?? null}
+      onSelect={select}
+      isLocked={isLocked}
+      onLockedSelect={onLockedSelect}
+    />
+  );
+
+  let content;
+  if (loading) {
+    content = <div className={classes.status} aria-busy="true" />;
+  } else if (error) {
+    content = (
+      <div className={classes.status} role="alert">
+        <h1 className={classes.statusTitle}>Не удалось загрузить каталог</h1>
+        <p className={classes.statusText}>registry.json: {error}</p>
+        <button type="button" className={classes.statusAction} onClick={() => window.location.reload()}>
+          Обновить страницу
+        </button>
+      </div>
+    );
+  } else if (active) {
+    content = (
+      <ServiceFrame
+        key={`${active.id}:${frameNonce}`}
+        ref={frameRef}
+        service={active}
+        initialPath={initialPath}
+        scheme={scheme}
+        onServiceMessage={onServiceMessage}
+      />
+    );
+  } else {
+    content = (
+      <Home services={services} onSelect={select} isLocked={isLocked} onLockedSelect={onLockedSelect} />
     );
   }
 
   return (
-    <AppShell
-      header={{ height: 48 }}
-      navbar={{
-        width: 240,
-        breakpoint: 'sm',
-        collapsed: { mobile: !navOpened },
-      }}
-      padding={0}
-    >
-      <Toolbar active={active} navOpened={navOpened} onBurgerClick={toggleNav} />
-
-      <Sidebar services={services} active={active} onSelect={selectService} />
-
-      <Drawer
-        opened={navOpened}
-        onClose={closeNav}
-        size={240}
-        hiddenFrom="sm"
-        withCloseButton={false}
-        padding={0}
-      >
-        <Sidebar services={services} active={active} onSelect={selectService} />
-      </Drawer>
-
-      <AppShell.Main style={{ height: '100dvh', paddingTop: 48 }}>
-        {active ? (
-          <ServiceFrame service={active} initialPath={initialPath} />
-        ) : (
-          <Welcome services={services} onSelect={selectService} />
-        )}
-      </AppShell.Main>
-    </AppShell>
+    <>
+      <TopBar active={active} onHome={() => select(null)} launcher={launcher} userSlot={userSlot} />
+      <div className={classes.main}>{content}</div>
+      {authAvailable && <LoginModal opened={modalOpened} onClose={closeLogin} onAuth={handleTelegramAuth} />}
+    </>
   );
 }

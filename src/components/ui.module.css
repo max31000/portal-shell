@@ -1,0 +1,88 @@
+/* Shared primitives used across shell chrome. */
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.iconButton:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.iconButton:active {
+  background: var(--surface-active);
+}
+
+.iconButton[aria-expanded='true'] {
+  background: var(--surface-active);
+  color: var(--text);
+}
+
+.pillButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 32px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-body);
+  cursor: pointer;
+  box-shadow: var(--shadow-xs);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+
+.pillButton:hover {
+  background: var(--surface-2);
+}
+
+.primaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  height: 36px;
+  padding: 0 var(--sp-4);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.primaryButton:hover {
+  background: var(--accent-hover);
+}
+
+.secondaryButton {
+  composes: primaryButton;
+  background: transparent;
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+.secondaryButton:hover {
+  background: var(--surface-hover);
+}

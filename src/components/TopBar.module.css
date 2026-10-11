@@ -1,0 +1,130 @@
+.bar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: var(--z-topbar);
+  /* Notch / status bar (viewport-fit=cover): the bar grows by the top inset, content stays below it. */
+  height: calc(var(--topbar-h) + env(safe-area-inset-top));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: env(safe-area-inset-top) calc(var(--sp-3) + env(safe-area-inset-right)) 0
+    calc(var(--sp-4) + env(safe-area-inset-left));
+  background: var(--topbar-bg);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid var(--border);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .bar {
+    background: var(--bg);
+  }
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 32px;
+  padding: 0 var(--sp-2) 0 var(--sp-1);
+  margin-left: calc(var(--sp-1) * -1);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  text-decoration: none;
+  flex: none;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.brand:hover {
+  background: var(--surface-hover);
+}
+
+.mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 14px;
+  font-weight: var(--fw-bold);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  padding-bottom: 2px;
+}
+
+.wordmark {
+  font-size: var(--fs-15);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-title);
+}
+
+.crumb {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  animation: crumb-in var(--dur) var(--ease);
+}
+
+.slash {
+  color: var(--border-strong);
+  font-size: var(--fs-17);
+  font-weight: var(--fw-regular);
+  margin: 0 var(--sp-1) 0 0;
+  user-select: none;
+}
+
+.serviceName {
+  font-size: var(--fs-15);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.right {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: none;
+}
+
+.userSlot {
+  display: flex;
+  align-items: center;
+  margin-left: var(--sp-1);
+  padding-left: var(--sp-2);
+  border-left: 1px solid var(--border);
+  height: 20px;
+}
+
+@keyframes crumb-in {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+}
+
+@media (max-width: 480px) {
+  .bar {
+    padding: env(safe-area-inset-top) calc(var(--sp-2) + env(safe-area-inset-right)) 0
+      calc(var(--sp-3) + env(safe-area-inset-left));
+  }
+
+  /* With a service open, the crumb carries identity; the wordmark yields space. */
+  .left:has(.crumb) .wordmark {
+    display: none;
+  }
+}

@@ -1,12 +1,23 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>mvv42</title>
+    <meta name="description" content="mvv42 — личные сервисы: прогноз денежного потока, ипотечный калькулятор, аналитика облигаций." />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0b0b0c" media="(prefers-color-scheme: dark)" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>mvv42.ru — Portal</title>
     <script>
-      // Mantine color scheme script placeholder (injected at runtime by ColorSchemeScript)
+      // Apply the saved colour scheme before first paint (same key Mantine uses) to avoid a flash.
+      (function () {
+        try {
+          var v = localStorage.getItem('mantine-color-scheme-value');
+          var s = v === 'light' || v === 'dark' ? v : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          document.documentElement.setAttribute('data-mantine-color-scheme', s);
+        } catch (e) {}
+      })();
     </script>
   </head>
   <body>

@@ -1,0 +1,122 @@
+.root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+}
+
+.frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--bg);
+}
+
+.frame[data-hidden] {
+  display: none;
+}
+
+/* Thin progress line pinned under the top bar. */
+.progress {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 2;
+  height: 2px;
+  background: var(--text);
+  transform-origin: left center;
+  transform: scaleX(0);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.progress[data-state='loading'] {
+  opacity: 0.85;
+  animation: progress-grow 12s cubic-bezier(0.1, 0.7, 0.15, 1) forwards;
+}
+
+.progress[data-state='loaded'] {
+  animation: progress-done 420ms var(--ease) forwards;
+}
+
+@keyframes progress-grow {
+  0% {
+    transform: scaleX(0);
+  }
+  8% {
+    transform: scaleX(0.35);
+  }
+  100% {
+    transform: scaleX(0.9);
+  }
+}
+
+@keyframes progress-done {
+  0% {
+    opacity: 0.85;
+    transform: scaleX(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress[data-state='loading'] {
+    animation: none;
+    transform: scaleX(1);
+    opacity: 0.35;
+  }
+
+  .progress[data-state='loaded'] {
+    animation: none;
+  }
+}
+
+.timeout {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-8) var(--sp-6);
+  text-align: center;
+  animation: fade-up var(--dur-slow) var(--ease);
+}
+
+.timeoutTitle {
+  margin: var(--sp-6) 0 0;
+  font-size: var(--fs-22);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-snug);
+  letter-spacing: var(--tracking-title);
+}
+
+.timeoutText {
+  max-width: 360px;
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-15);
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-6);
+}
+
+.actions a {
+  text-decoration: none;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
