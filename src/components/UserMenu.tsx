@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Menu } from '@mantine/core';
-import { IconLogout } from '@tabler/icons-react';
+import { IconLogout, IconShieldLock } from '@tabler/icons-react';
 import type { AuthUser } from '../auth/api';
 import classes from './UserMenu.module.css';
 import ui from './ui.module.css';
@@ -37,9 +37,11 @@ function Avatar({ user, size }: { user: AuthUser; size: number }) {
 interface UserMenuProps {
   user: AuthUser;
   onLogout: () => void;
+  /** Owner only: opens the admin console. */
+  onAdmin?: () => void;
 }
 
-export function UserMenu({ user, onLogout }: UserMenuProps) {
+export function UserMenu({ user, onLogout, onAdmin }: UserMenuProps) {
   const [opened, setOpened] = useState(false);
 
   return (
@@ -68,6 +70,11 @@ export function UserMenu({ user, onLogout }: UserMenuProps) {
             </div>
           </div>
           <Menu.Divider />
+          {onAdmin && (
+            <Menu.Item leftSection={<IconShieldLock size={16} stroke={1.75} />} onClick={onAdmin}>
+              Админка
+            </Menu.Item>
+          )}
           <Menu.Item leftSection={<IconLogout size={16} stroke={1.75} />} onClick={onLogout}>
             Выйти
           </Menu.Item>

@@ -1,0 +1,262 @@
+.scroll {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.page {
+  padding-bottom: calc(var(--mvv-sp-16) + env(safe-area-inset-bottom));
+}
+
+/* Tabs scroll sideways on phones instead of wrapping. */
+.tabsList {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabsList::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mvv-sp-6);
+  padding-top: var(--mvv-sp-6);
+}
+
+/* ---------- Tables ---------- */
+
+.table {
+  min-width: 640px;
+}
+
+.table td,
+.table th {
+  white-space: nowrap;
+}
+
+.row {
+  cursor: pointer;
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--mvv-focus-ring);
+  outline-offset: -2px;
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.who {
+  display: flex;
+  align-items: center;
+  gap: var(--mvv-sp-3);
+  min-width: 0;
+}
+
+.whoText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.whoName {
+  font-weight: var(--mvv-fw-medium);
+  color: var(--mvv-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.whoSub {
+  font-size: var(--mvv-fs-12);
+  color: var(--mvv-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mono {
+  font-family: var(--mvv-font-mono);
+  font-size: var(--mvv-fs-12);
+  color: var(--mvv-text-2);
+}
+
+.muted {
+  color: var(--mvv-text-3);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--mvv-sp-3);
+  flex-wrap: wrap;
+}
+
+.search {
+  flex: 1 1 260px;
+  max-width: 360px;
+}
+
+.toolbarHint {
+  font-size: var(--mvv-fs-13);
+  color: var(--mvv-text-3);
+}
+
+/* ---------- Mobile list (users) ---------- */
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.listItem + .listItem {
+  border-top: 1px solid var(--mvv-border);
+}
+
+.listButton {
+  display: flex;
+  align-items: center;
+  gap: var(--mvv-sp-3);
+  width: 100%;
+  padding: var(--mvv-sp-3) var(--mvv-sp-4);
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--mvv-dur-fast) var(--mvv-ease);
+}
+
+.listButton:hover {
+  background: var(--mvv-surface-hover);
+}
+
+.listButton:focus-visible {
+  outline: 2px solid var(--mvv-focus-ring);
+  outline-offset: -2px;
+}
+
+.listMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.listMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mvv-sp-1);
+  justify-content: flex-end;
+}
+
+/* ---------- Drawer ---------- */
+
+.drawerHead {
+  display: flex;
+  align-items: center;
+  gap: var(--mvv-sp-4);
+}
+
+.drawerName {
+  margin: 0;
+  font-size: var(--mvv-fs-17);
+  font-weight: var(--mvv-fw-semibold);
+  letter-spacing: var(--mvv-tracking-title);
+  line-height: 1.3;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.rowItem {
+  display: flex;
+  align-items: center;
+  gap: var(--mvv-sp-3);
+  padding: var(--mvv-sp-3) 0;
+}
+
+.rowItem + .rowItem {
+  border-top: 1px solid var(--mvv-border);
+}
+
+.rowMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.rowTitle {
+  font-size: var(--mvv-fs-13);
+  font-weight: var(--mvv-fw-medium);
+  color: var(--mvv-text);
+  line-height: 1.35;
+}
+
+.rowSub {
+  font-size: var(--mvv-fs-12);
+  color: var(--mvv-text-3);
+  line-height: 1.4;
+}
+
+.danger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mvv-sp-4);
+  flex-wrap: wrap;
+  padding: var(--mvv-sp-4);
+  border-radius: var(--mvv-r-md);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mvv-danger) 28%, transparent);
+  background: color-mix(in srgb, var(--mvv-danger-bg) 60%, transparent);
+}
+
+/* ---------- Invite link ---------- */
+
+.link {
+  display: flex;
+  align-items: center;
+  gap: var(--mvv-sp-2);
+  padding: var(--mvv-sp-2) var(--mvv-sp-2) var(--mvv-sp-2) var(--mvv-sp-3);
+  border-radius: var(--mvv-r-sm);
+  background: var(--mvv-surface-2);
+  box-shadow: inset 0 0 0 1px var(--mvv-border);
+}
+
+.linkText {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mvv-font-mono);
+  font-size: var(--mvv-fs-13);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.more {
+  display: flex;
+  justify-content: center;
+  padding: var(--mvv-sp-4);
+  border-top: 1px solid var(--mvv-border);
+}
+
+.center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: var(--mvv-sp-8) var(--mvv-gutter);
+}
+
+.listRow {
+  display: flex;
+  align-items: center;
+  gap: var(--mvv-sp-3);
+  padding: var(--mvv-sp-3) var(--mvv-sp-4);
+}

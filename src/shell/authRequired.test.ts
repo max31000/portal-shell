@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { AUTH_CHANGED_MIN_INTERVAL_MS, decideAuthRequired } from './authRequired';
 import type { AuthSnapshot } from '../auth/useAuth';
+import type { AppAccess } from '../auth/api';
 
-const user = { id: '7', telegramId: '123', name: 'Max', username: null, photoUrl: null, isAdmin: false };
-const apps = [
+const user = { id: 7, telegramId: 123, name: 'Max', username: null, photoUrl: null, isAdmin: false, isOwner: false };
+const apps: AppAccess[] = [
   { id: 'cashpulse', anonymous: false, access: 'public', granted: true },
   { id: 'bonds', anonymous: false, access: 'admin', granted: false },
 ];

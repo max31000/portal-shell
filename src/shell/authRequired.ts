@@ -16,7 +16,7 @@ export type AuthRequiredAction =
 /** Identity of what a service can observe through `/me`: user, admin flag and per-app grants. */
 export function authFingerprint(s: Pick<AuthSnapshot, 'status' | 'user' | 'apps'>): string {
   const apps = s.apps.map((a) => `${a.id}:${a.anonymous ? 1 : 0}${a.granted ? 1 : 0}`).join(',');
-  return `${s.status}|${s.user?.id ?? ''}|${s.user?.isAdmin ? 1 : 0}|${apps}`;
+  return `${s.status}|${s.user?.id ?? ''}|${s.user?.isAdmin ? 1 : 0}${s.user?.isOwner ? 1 : 0}|${apps}`;
 }
 
 /**

@@ -16,6 +16,8 @@ interface LoginModalProps {
   opened: boolean;
   onClose: () => void;
   onAuth: (data: TelegramAuthData) => Promise<void>;
+  /** Why sign-in is asked for (e.g. an invite); replaces the default subtitle. */
+  message?: string;
 }
 
 type Phase = 'idle' | 'pending' | 'error';
@@ -60,7 +62,7 @@ function TelegramWidget({ onAuth }: { onAuth: (data: TelegramAuthData) => void }
   );
 }
 
-export function LoginModal({ opened, onClose, onAuth }: LoginModalProps) {
+export function LoginModal({ opened, onClose, onAuth, message }: LoginModalProps) {
   const [phase, setPhase] = useState<Phase>('idle');
   // Every opening starts clean (a previous error / pending state must not stick).
   const [wasOpened, setWasOpened] = useState(opened);
@@ -87,7 +89,7 @@ export function LoginModal({ opened, onClose, onAuth }: LoginModalProps) {
       opened={opened}
       onClose={onClose}
       centered
-      zIndex="var(--z-modal)"
+      zIndex="var(--shell-z-modal)"
       size={400}
       radius="lg"
       padding={0}
@@ -104,7 +106,7 @@ export function LoginModal({ opened, onClose, onAuth }: LoginModalProps) {
         <h2 id="mvv42-login-title" className={classes.title}>
           Вход в mvv42
         </h2>
-        <p className={classes.text}>Один аккаунт Telegram для всех сервисов.</p>
+        <p className={classes.text}>{message ?? 'Один аккаунт Telegram для всех сервисов.'}</p>
 
         <div className={classes.widgetArea} aria-busy={phase === 'pending'}>
           {phase === 'pending' ? (

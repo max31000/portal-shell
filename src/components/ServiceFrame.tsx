@@ -105,7 +105,7 @@ export function ServiceFrame({ service, initialPath = '/', scheme, onServiceMess
     <div className={classes.root}>
       <div className={classes.progress} data-state={state} aria-hidden="true" />
       {state === 'loading' && (
-        <span className="visually-hidden" role="status">
+        <span className="mvv-visually-hidden" role="status">
           Загрузка {service.name}…
         </span>
       )}
