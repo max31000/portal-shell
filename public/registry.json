@@ -7,7 +7,8 @@
       "description": "Прогноз денежного потока",
       "icon": "chart-area-line",
       "path": "/cashpulse/",
-      "color": "#228be6"
+      "color": "#228be6",
+      "auth": "shared"
     },
     {
       "id": "credit_calc",
@@ -24,7 +25,8 @@
       "description": "Аналитика облигационного портфеля",
       "icon": "chart-candle",
       "path": "/bonds/",
-      "color": "#7048e8"
+      "color": "#7048e8",
+      "auth": "shared"
     }
   ]
 }
