@@ -19,6 +19,8 @@ export function OverviewTab({ services, onOpenApps }: OverviewTabProps) {
   if (error && !data) return <ErrorState title="Не удалось загрузить обзор" error={error} onRetry={() => void reload()} />;
 
   const metrics = data ?? { users: 0, activeSessions: 0, logins24h: 0, logins7d: 0, blocked: 0, apps: [] };
+  // Closed registration (auth ≥ the invite-login release); an older auth during the rollout has no such field.
+  const denied = typeof metrics.deniedUnregistered7d === 'number' ? metrics.deniedUnregistered7d : null;
 
   return (
     <>
@@ -34,8 +36,28 @@ export function OverviewTab({ services, onOpenApps }: OverviewTabProps) {
           loading={loading}
         />
         <Metric label="Активные сессии" value={metrics.activeSessions} hint="не отозваны и не истекли" loading={loading} />
-        <Metric label="Входы за 24 часа" value={metrics.logins24h} hint="успешные" loading={loading} />
-        <Metric label="Входы за 7 дней" value={metrics.logins7d} hint="успешные" loading={loading} />
+        {denied === null ? (
+          <>
+            <Metric label="Входы за 24 часа" value={metrics.logins24h} hint="успешные" loading={loading} />
+            <Metric label="Входы за 7 дней" value={metrics.logins7d} hint="успешные" loading={loading} />
+          </>
+        ) : (
+          // Four tiles stay in one row: the 24 h count moves into the 7-day hint.
+          <>
+            <Metric
+              label="Входы за 7 дней"
+              value={metrics.logins7d}
+              hint={`успешные · ${metrics.logins24h} за 24 часа`}
+              loading={loading}
+            />
+            <Metric
+              label="Попыток входа без приглашения (7 дн.)"
+              value={denied}
+              hint="новые люди без кода"
+              loading={loading}
+            />
+          </>
+        )}
       </MetricGrid>
 
       <Section

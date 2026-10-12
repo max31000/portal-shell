@@ -4,7 +4,8 @@ import { redeemInvite, type MeResponse } from '../auth/api';
 import type { AuthSnapshot, AuthStatus } from '../auth/useAuth';
 import { showNotice } from '../shell/notice';
 import type { Service } from '../types';
-import { captureInvite, clearPendingInvite, redeemErrorText } from './invite';
+import { normalizeInviteCode } from './code';
+import { captureInvite, clearPendingInvite, redeemErrorText, storePendingInvite } from './invite';
 
 export const INVITE_LOGIN_MESSAGE = 'Войдите, чтобы принять приглашение.';
 
@@ -28,11 +29,29 @@ interface InviteFlowOptions {
 export interface InviteFlow {
   /** A code is waiting for login / redeem. */
   pending: boolean;
+  /** The pending code (prefills the login modal's code field). */
+  code: string | null;
   /** The visitor closed the login modal: drop the invite. */
   cancel: () => void;
+  /**
+   * `/telegram` already consumed the code (its response has `invite`, spec review decision 4): drop it, no redeem.
+   * Call in the same tick as applying the new `/me` so the flow never redeems it a second time.
+   */
+  finish: () => void;
+  /**
+   * A known user signed in with a code typed into the login modal (no `invite` in the response, decision 5):
+   * redeem it quietly — «already granted» / login-only codes give no notice. Same tick as applying `/me`.
+   */
+  adopt: (code: string) => void;
 }
 
 const MAX_ATTEMPTS = 2;
+
+function sameCode(a: string, b: string): boolean {
+  const na = normalizeInviteCode(a);
+  const nb = normalizeInviteCode(b);
+  return na.ok && nb.ok ? na.value === nb.value : a === b;
+}
 
 /**
  * `?invite=CODE` (spec §10.10): captured on boot (URL cleaned, code in sessionStorage) → signed out: login modal →
@@ -41,6 +60,8 @@ const MAX_ATTEMPTS = 2;
  */
 export function useInviteFlow(options: InviteFlowOptions): InviteFlow {
   const [code, setCode] = useState<string | null>(captureInvite);
+  /** `typed` — adopted from the login modal: redeem quietly. */
+  const source = useRef<'link' | 'typed'>('link');
   /** Bumped to re-run the flow after a 401 retry. */
   const [tick, setTick] = useState(0);
   const opts = useRef(options);
@@ -84,9 +105,16 @@ export function useInviteFlow(options: InviteFlowOptions): InviteFlow {
         finish();
         opts.current.applyMe(result.me);
         opts.current.onAuthChanged();
+        // Login-only invite (appId null): nothing was granted, the visitor is simply signed in.
+        if (result.appId === null) return;
         const service = opts.current.services.find((s) => s.id === result.appId);
         const name = service?.name ?? result.appId;
-        showNotice('invite', result.alreadyGranted ? `У вас уже есть доступ к «${name}»` : `Доступ к «${name}» открыт`);
+        if (result.alreadyGranted) {
+          if (source.current === 'typed') return;
+          showNotice('invite', `У вас уже есть доступ к «${name}»`);
+        } else {
+          showNotice('invite', `Доступ к «${name}» открыт`);
+        }
         if (service) opts.current.openService(service);
       } catch (error) {
         if (isApiError(error) && error.status === 401 && attempts.current < MAX_ATTEMPTS) {
@@ -112,5 +140,18 @@ export function useInviteFlow(options: InviteFlowOptions): InviteFlow {
     finish();
   }, [code, finish]);
 
-  return { pending: code !== null, cancel };
+  const adopt = useCallback(
+    (next: string) => {
+      // The link's own code (maybe formatted differently): the link flow already redeems it.
+      if (code !== null && sameCode(code, next)) return;
+      source.current = 'typed';
+      attempts.current = 0;
+      prompted.current = true; // already signed in by the modal: never prompt for this code
+      storePendingInvite(next);
+      setCode(next);
+    },
+    [code],
+  );
+
+  return { pending: code !== null, code, cancel, finish, adopt };
 }

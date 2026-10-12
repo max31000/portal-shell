@@ -65,7 +65,7 @@ export function useAuth(): AuthState {
   }, [load]);
 
   const login = useCallback(async (data: TelegramAuthData) => {
-    const next = fromMe(await loginTelegram(data));
+    const next = fromMe((await loginTelegram(data)).me);
     if (mounted.current) setSnap(next);
     return next;
   }, []);

@@ -49,6 +49,7 @@
 }
 
 .widgetArea {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -61,10 +62,16 @@
   display: flex;
   justify-content: center;
   min-height: 40px;
+  transition: opacity var(--mvv-dur-fast) var(--mvv-ease);
+}
+
+.widgetArea[data-pending] .widget {
+  opacity: 0.35;
+  pointer-events: none;
 }
 
 .pending {
-  margin: 0;
+  margin: var(--mvv-sp-2) 0 0;
   font-size: var(--mvv-fs-13);
   color: var(--mvv-text-2);
 }
@@ -73,6 +80,60 @@
   margin: var(--mvv-sp-2) 0 0;
   font-size: var(--mvv-fs-13);
   color: var(--mvv-danger);
+}
+
+/* ---------- Invite code (closed registration) ---------- */
+
+.invite {
+  width: 100%;
+  margin-top: var(--mvv-sp-6);
+  padding-top: var(--mvv-sp-5);
+  border-top: 1px solid var(--mvv-border);
+  text-align: left;
+}
+
+.inviteNote {
+  margin: 0 0 var(--mvv-sp-3);
+  font-size: var(--mvv-fs-13);
+  font-weight: var(--mvv-fw-medium);
+  color: var(--mvv-text);
+  text-align: center;
+}
+
+.codeLabel {
+  font-size: var(--mvv-fs-12);
+  color: var(--mvv-text-2);
+}
+
+.codeInput {
+  font-family: var(--mvv-font-mono);
+  letter-spacing: 0.06em;
+}
+
+.codeInput::placeholder {
+  letter-spacing: 0.06em;
+}
+
+.invite[data-attention] .codeInput:not([data-error]) {
+  border-color: var(--mvv-warning);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mvv-warning) 18%, transparent);
+}
+
+.callout {
+  margin: var(--mvv-sp-3) 0 0;
+  padding: var(--mvv-sp-3);
+  border-radius: var(--mvv-r-sm);
+  background: var(--mvv-warning-bg);
+  color: var(--mvv-text);
+  font-size: var(--mvv-fs-13);
+  line-height: 1.45;
+}
+
+.calloutLink {
+  font-weight: var(--mvv-fw-semibold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
 }
 
 .hint {

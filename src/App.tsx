@@ -3,7 +3,7 @@ import { useComputedColorScheme } from '@mantine/core';
 import { useRegistry } from './useRegistry';
 import { useAuth, isAppLocked, type AuthSnapshot } from './auth/useAuth';
 import { sanitizeReturnUrl } from './auth/returnUrl';
-import { refreshSession, type TelegramAuthData } from './auth/api';
+import { loginTelegram, refreshSession, type TelegramAuthData } from './auth/api';
 import { TopBar } from './components/TopBar';
 import { AppLauncher } from './components/AppLauncher';
 import { Home } from './components/Home';
@@ -18,6 +18,7 @@ import type { Service } from './types';
 import { AdminRoute } from './admin/AdminRoute';
 import { ADMIN_ENTRY, ADMIN_ID, adminHash, parseAdminTab, type AdminTab } from './admin/route';
 import { useInviteFlow } from './invite/useInviteFlow';
+import { clearInviteDraft } from './invite/invite';
 import classes from './App.module.css';
 
 const THEME_COLOR = { light: '#fafafa', dark: '#0b0b0c' } as const;
@@ -185,9 +186,22 @@ export default function App() {
   }, [invite, loginReason]);
 
   const handleTelegramAuth = useCallback(
-    async (data: TelegramAuthData) => {
-      const next = await auth.login(data);
+    async (data: TelegramAuthData, inviteCode: string | null) => {
+      const { me, invite: registered } = await loginTelegram(data, inviteCode);
+      // Same tick as applying /me, so the invite flow never sees «signed in» with a code already spent here:
+      // `invite` in the response → the code registered this user (no redeem, spec decision 4); a code typed by a
+      // known user → quiet redeem (decision 5).
+      if (registered) invite.finish();
+      else if (inviteCode) invite.adopt(inviteCode);
+      clearInviteDraft();
+      const next = auth.apply(me);
       frameRef.current?.post({ type: 'AUTH_CHANGED' });
+      let inviteService: Service | null = null;
+      if (registered) {
+        inviteService = registered.appId ? (services.find((s) => s.id === registered.appId) ?? null) : null;
+        const name = inviteService?.name ?? registered.appId;
+        showNotice('invite', name ? `Доступ к «${name}» открыт` : 'Добро пожаловать');
+      }
       setLoginOpen(false);
       setLoginDismissed(true);
       setLoginMessage(undefined);
@@ -199,13 +213,14 @@ export default function App() {
         }
       }
       clearLoginParams();
-      if (afterLogin) {
+      if (inviteService) select(inviteService);
+      else if (afterLogin) {
         if (isAppLocked(next.status, next.apps, afterLogin)) showNotice('no-access', NO_ACCESS_NOTICE);
         else select(afterLogin);
       }
       setAfterLogin(null);
     },
-    [auth, loginRequest, afterLogin, select],
+    [auth, invite, services, loginRequest, afterLogin, select],
   );
 
   const handleLogout = useCallback(async () => {
@@ -368,7 +383,15 @@ export default function App() {
         userSlot={userSlot}
       />
       <div className={classes.main}>{content}</div>
-      {authAvailable && <LoginModal opened={modalOpened} onClose={closeLogin} onAuth={handleTelegramAuth} message={loginMessage} />}
+      {authAvailable && (
+        <LoginModal
+          opened={modalOpened}
+          onClose={closeLogin}
+          onAuth={handleTelegramAuth}
+          message={loginMessage}
+          inviteCode={invite.code}
+        />
+      )}
     </>
   );
 }

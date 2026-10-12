@@ -31,7 +31,7 @@ async function apiJson<T>(input: string, init?: RequestInit): Promise<T> {
 export const ADMIN_API = '/auth/api/admin';
 
 export type AccessMode = 'public' | 'invite' | 'admin';
-export type LoginResult = 'ok' | 'denied_blocked' | 'invalid' | 'replayed';
+export type LoginResult = 'ok' | 'denied_blocked' | 'invalid' | 'replayed' | 'denied_unregistered';
 export type InviteStatus = 'active' | 'expired' | 'exhausted';
 
 export interface AdminUser {
@@ -92,6 +92,8 @@ export interface AdminOverview {
   logins24h: number;
   logins7d: number;
   blocked: number;
+  /** Sign-in attempts refused for lack of an invite over 7 days (closed registration; absent on an older auth). */
+  deniedUnregistered7d?: number;
   apps: OverviewApp[];
 }
 
@@ -117,7 +119,8 @@ export interface AdminGrant {
 
 export interface AdminInvite {
   id: number;
-  appId: string;
+  /** null — a login-only invite (registers a new user, grants nothing). */
+  appId: string | null;
   maxUses: number;
   uses: number;
   /** Always set by the API; `null` only for hand-made rows (never expires). */
@@ -129,7 +132,8 @@ export interface AdminInvite {
 }
 
 export interface CreateInviteInput {
-  appId: string;
+  /** Required: an existing app, or explicit null for a login-only invite. */
+  appId: string | null;
   /** 1…1000, default 1. */
   maxUses?: number;
   /** 1…8760, default 168 (7 days). */
@@ -138,9 +142,9 @@ export interface CreateInviteInput {
 
 export interface CreatedInvite {
   id: number;
-  /** Plain code — returned once, only its SHA-256 is stored. */
+  /** Plain code (`XXXX-XXXX-XXXX`) — returned once, only its hash is stored. */
   code: string;
-  appId: string;
+  appId: string | null;
   maxUses: number;
   expiresAt: string;
 }

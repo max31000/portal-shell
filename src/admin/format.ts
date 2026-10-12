@@ -40,6 +40,9 @@ export function formatRelative(iso: string | null | undefined, fallback = 'ни�
   return formatDate(iso);
 }
 
+/** Label of an invite without a service (`appId: null`). */
+export const LOGIN_ONLY_LABEL = 'Только вход';
+
 export const ACCESS_LABEL: Record<AccessMode, string> = {
   public: 'Всем после входа',
   invite: 'По приглашению',
@@ -57,6 +60,7 @@ export const LOGIN_RESULT: Record<LoginResult, { label: string; color: string }>
   denied_blocked: { label: 'Заблокирован', color: 'red' },
   invalid: { label: 'Неверная подпись', color: 'orange' },
   replayed: { label: 'Повтор', color: 'orange' },
+  denied_unregistered: { label: 'Без приглашения', color: 'gray' },
 };
 
 export const INVITE_STATUS: Record<InviteStatus, { label: string; color: string }> = {

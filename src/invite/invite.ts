@@ -8,6 +8,8 @@ import { isApiError } from '@mvv42/kit/platform';
 
 export const INVITE_PARAM = 'invite';
 export const INVITE_STORAGE_KEY = 'mvv42-invite';
+/** What the visitor typed into the login modal's code field (raw text; survives a reload / Telegram popup). */
+export const INVITE_DRAFT_KEY = 'mvv42-invite-draft';
 
 /** Codes are URL-safe tokens; anything else is ignored rather than sent to the server. */
 const CODE_RE = /^[A-Za-z0-9_-]{4,128}$/;
@@ -37,6 +39,36 @@ export function clearPendingInvite(): void {
   }
 }
 
+/** Stores a code for the redeem after login (e.g. typed by a known user in the login modal). */
+export function storePendingInvite(code: string): void {
+  try {
+    session()?.setItem(INVITE_STORAGE_KEY, code);
+  } catch {
+    /* storage blocked */
+  }
+}
+
+export function readInviteDraft(): string | null {
+  try {
+    return session()?.getItem(INVITE_DRAFT_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveInviteDraft(value: string): void {
+  try {
+    if (value.trim()) session()?.setItem(INVITE_DRAFT_KEY, value.slice(0, 200));
+    else session()?.removeItem(INVITE_DRAFT_KEY);
+  } catch {
+    /* storage blocked */
+  }
+}
+
+export function clearInviteDraft(): void {
+  saveInviteDraft('');
+}
+
 /**
  * Moves `?invite=CODE` from the URL into sessionStorage (URL cleaned with replaceState, other params and the
  * hash kept). Returns the pending code — from the URL or one stored earlier — or null.
@@ -48,11 +80,10 @@ export function captureInvite(): string | null {
     url.searchParams.delete(INVITE_PARAM);
     history.replaceState(history.state, '', url.pathname + url.search + url.hash);
     if (CODE_RE.test(raw)) {
-      try {
-        session()?.setItem(INVITE_STORAGE_KEY, raw);
-      } catch {
-        /* storage blocked — the code still lives in memory for this page */
-      }
+      // A fresh link wins over whatever was typed into the login modal earlier.
+      clearInviteDraft();
+      // Storage blocked → the code still lives in memory for this page.
+      storePendingInvite(raw);
       return raw;
     }
   }

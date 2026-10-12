@@ -141,6 +141,29 @@ describe('useInviteFlow', () => {
     await waitFor(() => expect(props.requestLogin).toHaveBeenCalledWith(INVITE_LOGIN_MESSAGE));
   });
 
+  it('login-only invite (appId null) for a signed-in user: dropped quietly, nothing opened', async () => {
+    sessionStorage.setItem(INVITE_STORAGE_KEY, 'K7PM-2XQ9-HD4T');
+    mockFetch({ 'POST /auth/api/invites/redeem': () => ({ appId: null, alreadyGranted: true, me: ME }) });
+    const { props, hook } = flow('authenticated');
+    await waitFor(() => expect(hook.result.current.pending).toBe(false));
+    expect(props.applyMe).toHaveBeenCalled();
+    expect(props.openService).not.toHaveBeenCalled();
+    expect(notices).toHaveLength(0);
+  });
+
+  it('finish() drops the code without a redeem; adopt() of the same code (other spelling) is a no-op', async () => {
+    sessionStorage.setItem(INVITE_STORAGE_KEY, 'K7PM-2XQ9-HD4T');
+    const { fetchMock } = mockFetch({});
+    const { props, hook } = flow('anonymous');
+    act(() => hook.result.current.adopt('k7pm2xq9hd4t'));
+    expect(hook.result.current.code).toBe('K7PM-2XQ9-HD4T');
+    act(() => hook.result.current.finish());
+    hook.rerender({ ...props, authStatus: 'authenticated' });
+    expect(hook.result.current.pending).toBe(false);
+    expect(readPendingInvite()).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('auth unavailable: drops the code with a notice', () => {
     sessionStorage.setItem(INVITE_STORAGE_KEY, 'code1234');
     const { hook } = flow('unavailable');
