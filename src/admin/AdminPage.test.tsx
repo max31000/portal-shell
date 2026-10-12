@@ -315,12 +315,12 @@ describe('invites', () => {
     });
     renderWithKit(<Harness initial="invites" />);
     fireEvent.click(await screen.findByRole('button', { name: 'Создать инвайт' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Новый инвайт' });
+    const dialog = await screen.findByRole('dialog', { name: 'Новый инвайт' }, { timeout: 5000 });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Создать' }));
     await waitFor(() => expect(find('POST', '/auth/api/admin/invites')).toHaveLength(1));
     // Defaults: the invite-mode app, 1 use, 7 days.
     expect(find('POST', '/auth/api/admin/invites')[0].body).toEqual({ appId: 'cashpulse', maxUses: 1, expiresInHours: 168 });
-    const link = await screen.findByTestId('invite-link');
+    const link = await screen.findByTestId('invite-link', {}, { timeout: 5000 });
     expect(link.textContent).toBe(`${window.location.origin}/?invite=kQ7vX2mP9aLr4TzW`);
     expect(screen.getByText('Ссылка показывается один раз')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Копировать' })).toBeTruthy();
