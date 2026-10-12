@@ -18,7 +18,7 @@ afterEach(() => {
  * `MeApp(string Id, bool Anonymous, string Access, bool Granted)`, camelCase): ids are JSON numbers.
  */
 const BACKEND_ME_AUTHED = {
-  user: { id: 7, telegramId: 123456789, name: 'Max V', username: null, photoUrl: null, isAdmin: false },
+  user: { id: 7, telegramId: 123456789, name: 'Max V', username: null, photoUrl: null, isAdmin: false, isOwner: false },
   apps: [
     { id: 'cashpulse', anonymous: false, access: 'public', granted: true },
     { id: 'credit_calc', anonymous: true, access: 'public', granted: true },
@@ -35,25 +35,32 @@ const BACKEND_ME_ANON = {
 };
 
 describe('parseMeResponse (backend shape)', () => {
-  it('accepts numeric ids and normalises them to strings', () => {
+  it('accepts numeric ids (kit `Me` shape)', () => {
     const me = parseMeResponse(BACKEND_ME_AUTHED);
     expect(me?.user).toEqual({
-      id: '7',
-      telegramId: '123456789',
+      id: 7,
+      telegramId: 123456789,
       name: 'Max V',
       username: null,
       photoUrl: null,
       isAdmin: false,
+      isOwner: false,
     });
     expect(me?.apps).toEqual(BACKEND_ME_AUTHED.apps);
   });
 
-  it('accepts string ids and non-null optional fields', () => {
+  it('tolerates numeric-string ids and non-null optional fields', () => {
     const me = parseMeResponse({
-      user: { id: '7', telegramId: '42', name: 'M', username: 'max', photoUrl: 'https://t.me/i/u.jpg', isAdmin: true },
+      user: { id: '7', telegramId: '42', name: 'M', username: 'max', photoUrl: 'https://t.me/i/u.jpg', isAdmin: true, isOwner: true },
       apps: [],
     });
-    expect(me?.user).toMatchObject({ id: '7', telegramId: '42', username: 'max', isAdmin: true });
+    expect(me?.user).toMatchObject({ id: 7, telegramId: 42, username: 'max', isAdmin: true, isOwner: true });
+  });
+
+  it('treats a missing isOwner (older auth) as false', () => {
+    const { isOwner: _omit, ...legacy } = BACKEND_ME_AUTHED.user;
+    void _omit;
+    expect(parseMeResponse({ user: legacy, apps: [] })?.user?.isOwner).toBe(false);
   });
 
   it('accepts the anonymous shape', () => {
@@ -66,6 +73,8 @@ describe('parseMeResponse (backend shape)', () => {
     ['user id boolean', { user: { ...BACKEND_ME_AUTHED.user, id: true }, apps: [] }],
     ['name not a string', { user: { ...BACKEND_ME_AUTHED.user, name: 5 }, apps: [] }],
     ['isAdmin missing', { user: { ...BACKEND_ME_AUTHED.user, isAdmin: undefined }, apps: [] }],
+    ['isOwner not a boolean', { user: { ...BACKEND_ME_AUTHED.user, isOwner: 'yes' }, apps: [] }],
+    ['id not numeric', { user: { ...BACKEND_ME_AUTHED.user, id: 'abc' }, apps: [] }],
     ['app granted missing', { user: null, apps: [{ id: 'a', anonymous: true, access: 'public' }] }],
     ['array body', []],
   ])('rejects %s', (_label, body) => {
@@ -77,8 +86,8 @@ describe('loginTelegram', () => {
   it('parses the backend /telegram body (same as /me)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(BACKEND_ME_AUTHED)));
     const me = await loginTelegram({ id: 123456789, first_name: 'Max', auth_date: 1, hash: 'h' });
-    expect(me.user?.id).toBe('7');
-    expect(me.user?.telegramId).toBe('123456789');
+    expect(me.user?.id).toBe(7);
+    expect(me.user?.telegramId).toBe(123456789);
   });
 });
 
@@ -96,7 +105,7 @@ describe('getMe', () => {
   it('accepts the exact backend payload', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(BACKEND_ME_AUTHED)));
     const me = await getMe();
-    expect(me.user?.id).toBe('7');
+    expect(me.user?.id).toBe(7);
   });
 
   it('sends same-origin credentials', async () => {
@@ -133,7 +142,7 @@ describe('useAuth', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ user, apps })));
     const authed = renderHook(() => useAuth());
     await waitFor(() => expect(authed.result.current.status).toBe('authenticated'));
-    expect(authed.result.current.user).toEqual({ ...user, id: '11', telegramId: '42' });
+    expect(authed.result.current.user).toEqual({ ...user, isOwner: false });
   });
 });
 

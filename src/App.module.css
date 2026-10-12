@@ -1,7 +1,7 @@
 .main {
   height: 100vh;
   height: 100dvh;
-  padding-top: calc(var(--topbar-h) + env(safe-area-inset-top));
+  padding-top: calc(var(--mvv-topbar-h) + env(safe-area-inset-top));
 }
 
 .status {
@@ -10,33 +10,33 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  padding: var(--sp-8) var(--sp-6);
+  padding: var(--mvv-sp-8) var(--mvv-sp-6);
   text-align: center;
 }
 
 .statusTitle {
   margin: 0;
-  font-size: var(--fs-22);
-  font-weight: var(--fw-semibold);
-  letter-spacing: var(--tracking-title);
+  font-size: var(--mvv-fs-22);
+  font-weight: var(--mvv-fw-semibold);
+  letter-spacing: var(--mvv-tracking-title);
 }
 
 .statusText {
-  margin: var(--sp-2) 0 0;
-  font-family: var(--font-mono);
-  font-size: var(--fs-13);
-  color: var(--text-3);
+  margin: var(--mvv-sp-2) 0 0;
+  font-family: var(--mvv-font-mono);
+  font-size: var(--mvv-fs-13);
+  color: var(--mvv-text-3);
 }
 
 .statusAction {
-  margin-top: var(--sp-6);
+  margin-top: var(--mvv-sp-6);
   height: 36px;
-  padding: 0 var(--sp-4);
+  padding: 0 var(--mvv-sp-4);
   border: 0;
-  border-radius: var(--r-sm);
-  background: var(--accent);
-  color: var(--text-on-accent);
-  font-size: var(--fs-13);
-  font-weight: var(--fw-medium);
+  border-radius: var(--mvv-r-sm);
+  background: var(--mvv-accent);
+  color: var(--mvv-accent-contrast);
+  font-size: var(--mvv-fs-13);
+  font-weight: var(--mvv-fw-medium);
   cursor: pointer;
 }

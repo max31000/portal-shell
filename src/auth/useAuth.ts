@@ -21,6 +21,8 @@ export interface AuthState {
   logout: () => Promise<void>;
   /** Re-read `/me` (the server refreshes the access cookie implicitly if needed). Resolves to the new snapshot. */
   refresh: () => Promise<AuthSnapshot>;
+  /** Adopt a `/me` body obtained elsewhere (e.g. the invite redeem response). */
+  apply: (me: MeResponse) => AuthSnapshot;
 }
 
 export interface AuthSnapshot {
@@ -78,9 +80,15 @@ export function useAuth(): AuthState {
 
   const refresh = useCallback(() => load(), [load]);
 
+  const apply = useCallback((me: MeResponse) => {
+    const next = fromMe(me);
+    if (mounted.current) setSnap(next);
+    return next;
+  }, []);
+
   return useMemo(
-    () => ({ ...snap, login, logout, refresh }),
-    [snap, login, logout, refresh],
+    () => ({ ...snap, login, logout, refresh, apply }),
+    [snap, login, logout, refresh, apply],
   );
 }
 

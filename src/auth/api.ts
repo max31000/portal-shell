@@ -3,34 +3,14 @@
  * Cookies are HttpOnly + SameSite=Strict; we only ever send them same-origin.
  */
 
-export type AccessMode = 'public' | 'invite' | 'admin';
+import { ApiError, apiJson, type AppAccess, type AppAccessMode, type Me, type Mvv42User } from '@mvv42/kit/platform';
 
-/**
- * Client model of the signed-in user. The backend (`MeUser` in mvv42-auth) serialises
- * `{ id: long, telegramId: long, name: string, username: string|null, photoUrl: string|null, isAdmin: bool }`;
- * ids are normalised to strings here so JS never has to reason about 64-bit numbers.
- */
-export interface AuthUser {
-  id: string;
-  telegramId: string;
-  name: string;
-  username: string | null;
-  photoUrl: string | null;
-  isAdmin: boolean;
-}
-
-export interface AppAccess {
-  id: string;
-  anonymous: boolean;
-  /** `AccessMode` today; kept as a string so a new server-side mode does not break the shell. */
-  access: AccessMode | (string & {});
-  granted: boolean;
-}
-
-export interface MeResponse {
-  user: AuthUser | null;
-  apps: AppAccess[];
-}
+/** Wire types of `/auth/api/me` come from the kit (`Me`, `Mvv42User`, `AppAccess`). */
+export type { AppAccess, Me, Mvv42User };
+/** Alias used across the shell. */
+export type AuthUser = Mvv42User;
+export type MeResponse = Me;
+export type AccessMode = AppAccessMode;
 
 /** Object passed by the Telegram Login Widget to `data-onauth`. */
 export interface TelegramAuthData {
@@ -68,10 +48,10 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-/** JSON id: the backend sends `long` numbers; tolerate strings too. */
-function toId(v: unknown): string | null {
-  if (typeof v === 'string' && v !== '') return v;
-  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+/** JSON id: the backend sends `long` numbers (safe integers in practice); tolerate numeric strings too. */
+function toId(v: unknown): number | null {
+  if (typeof v === 'number' && Number.isSafeInteger(v)) return v;
+  if (typeof v === 'string' && /^\d{1,15}$/.test(v)) return Number(v);
   return null;
 }
 
@@ -80,7 +60,7 @@ function toNullableString(v: unknown): string | null | undefined {
   return typeof v === 'string' ? v : undefined;
 }
 
-function parseUser(v: unknown): AuthUser | null | undefined {
+function parseUser(v: unknown): Mvv42User | null | undefined {
   if (v === null) return null;
   if (!isRecord(v)) return undefined;
   const id = toId(v.id);
@@ -89,18 +69,21 @@ function parseUser(v: unknown): AuthUser | null | undefined {
   const photoUrl = toNullableString(v.photoUrl);
   if (id === null || telegramId === null || typeof v.name !== 'string') return undefined;
   if (username === undefined || photoUrl === undefined || typeof v.isAdmin !== 'boolean') return undefined;
-  return { id, telegramId, name: v.name, username, photoUrl, isAdmin: v.isAdmin };
+  // `isOwner` arrived with the admin console; an older auth without it simply has no owner.
+  if (v.isOwner !== undefined && typeof v.isOwner !== 'boolean') return undefined;
+  return { id, telegramId, name: v.name, username, photoUrl, isAdmin: v.isAdmin, isOwner: v.isOwner === true };
 }
 
 function parseApp(v: unknown): AppAccess | undefined {
   if (!isRecord(v) || typeof v.id !== 'string' || typeof v.access !== 'string') return undefined;
   if (typeof v.anonymous !== 'boolean' || typeof v.granted !== 'boolean') return undefined;
-  return { id: v.id, anonymous: v.anonymous, access: v.access, granted: v.granted };
+  // An unknown future mode is passed through; the shell only reads `anonymous` / `granted`.
+  return { id: v.id, anonymous: v.anonymous, access: v.access as AppAccessMode, granted: v.granted };
 }
 
 /**
  * Validates and normalises the `/me` and `/telegram` body (`MeResponse` in mvv42-auth, camelCase JSON):
- * `{ user: MeUser | null, apps: { id, anonymous, access, granted }[] }`. Returns null on any mismatch.
+ * `{ user: MeUser | null, apps: { id, anonymous, access, granted }[] }` (kit `Me`). Returns null on any mismatch.
  */
 export function parseMeResponse(v: unknown): MeResponse | null {
   if (!isRecord(v) || !Array.isArray(v.apps)) return null;
@@ -213,4 +196,28 @@ export function refreshSession(): Promise<boolean> {
   });
   inflightRefresh = flight;
   return flight;
+}
+
+export interface RedeemResult {
+  appId: string;
+  /** The user could already use the app (grant, public app, admin): no use was spent. */
+  alreadyGranted: boolean;
+  /** Fresh `/me` (the access cookie was re-issued with the new grant). */
+  me: Me;
+}
+
+/**
+ * POST /auth/api/invites/redeem `{ code }` (any signed-in user). Throws the kit's `ApiError`:
+ * 400 `invite_not_found` / `invite_expired` / `invite_exhausted`, 401 when signed out (after one refresh).
+ */
+export async function redeemInvite(code: string): Promise<RedeemResult> {
+  const body = await apiJson<unknown>(`${AUTH_API}/invites/redeem`, {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  });
+  const me = isRecord(body) ? parseMeResponse(body.me) : null;
+  if (!isRecord(body) || typeof body.appId !== 'string' || !me) {
+    throw new ApiError(200, 'unexpected_response', 'Unexpected redeem response');
+  }
+  return { appId: body.appId, alreadyGranted: body.alreadyGranted === true, me };
 }

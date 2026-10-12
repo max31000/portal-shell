@@ -9,16 +9,6 @@
     <meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0b0b0c" media="(prefers-color-scheme: dark)" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <script>
-      // Apply the saved colour scheme before first paint (same key Mantine uses) to avoid a flash.
-      (function () {
-        try {
-          var v = localStorage.getItem('mantine-color-scheme-value');
-          var s = v === 'light' || v === 'dark' ? v : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-          document.documentElement.setAttribute('data-mantine-color-scheme', s);
-        } catch (e) {}
-      })();
-    </script>
   </head>
   <body>
     <div id="root"></div>

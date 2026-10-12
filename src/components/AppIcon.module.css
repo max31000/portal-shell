@@ -15,13 +15,13 @@
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 60%),
     var(--tile-color);
-  box-shadow: var(--tile-highlight);
+  box-shadow: var(--mvv-tile-highlight);
   overflow: hidden;
 }
 
 .letter {
   font-size: calc(var(--tile-size) * 0.44);
-  font-weight: var(--fw-semibold);
+  font-weight: var(--mvv-fw-semibold);
   line-height: 1;
   letter-spacing: -0.02em;
 }

@@ -2,7 +2,7 @@
   position: relative;
   width: 100%;
   height: 100%;
-  background: var(--bg);
+  background: var(--mvv-bg);
 }
 
 .frame {
@@ -10,7 +10,7 @@
   width: 100%;
   height: 100%;
   border: 0;
-  background: var(--bg);
+  background: var(--mvv-bg);
 }
 
 .frame[data-hidden] {
@@ -23,7 +23,7 @@
   inset: 0 0 auto 0;
   z-index: 2;
   height: 2px;
-  background: var(--text);
+  background: var(--mvv-text);
   transform-origin: left center;
   transform: scaleX(0);
   opacity: 0;
@@ -36,7 +36,7 @@
 }
 
 .progress[data-state='loaded'] {
-  animation: progress-done 420ms var(--ease) forwards;
+  animation: progress-done 420ms var(--mvv-ease) forwards;
 }
 
 @keyframes progress-grow {
@@ -81,24 +81,24 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: var(--sp-8) var(--sp-6);
+  padding: var(--mvv-sp-8) var(--mvv-sp-6);
   text-align: center;
-  animation: fade-up var(--dur-slow) var(--ease);
+  animation: fade-up var(--mvv-dur-slow) var(--mvv-ease);
 }
 
 .timeoutTitle {
-  margin: var(--sp-6) 0 0;
-  font-size: var(--fs-22);
-  font-weight: var(--fw-semibold);
-  line-height: var(--lh-snug);
-  letter-spacing: var(--tracking-title);
+  margin: var(--mvv-sp-6) 0 0;
+  font-size: var(--mvv-fs-22);
+  font-weight: var(--mvv-fw-semibold);
+  line-height: var(--mvv-lh-snug);
+  letter-spacing: var(--mvv-tracking-title);
 }
 
 .timeoutText {
   max-width: 360px;
-  margin: var(--sp-2) 0 0;
-  font-size: var(--fs-15);
-  color: var(--text-2);
+  margin: var(--mvv-sp-2) 0 0;
+  font-size: var(--mvv-fs-15);
+  color: var(--mvv-text-2);
   text-wrap: pretty;
 }
 
@@ -106,8 +106,8 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: var(--sp-2);
-  margin-top: var(--sp-6);
+  gap: var(--mvv-sp-2);
+  margin-top: var(--mvv-sp-6);
 }
 
 .actions a {

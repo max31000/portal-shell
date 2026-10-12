@@ -1,12 +1,12 @@
 .overlay {
-  background: var(--scrim) !important;
+  background: var(--mvv-scrim) !important;
 }
 
 .content {
-  background: var(--surface);
+  background: var(--mvv-surface);
   box-shadow:
-    0 0 0 1px var(--border),
-    var(--shadow-lg);
+    0 0 0 1px var(--mvv-border),
+    var(--mvv-shadow-lg);
   overflow: hidden;
 }
 
@@ -14,7 +14,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: var(--sp-10) var(--sp-8) var(--sp-6);
+  padding: var(--mvv-sp-10) var(--mvv-sp-8) var(--mvv-sp-6);
   text-align: center;
 }
 
@@ -25,27 +25,27 @@
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  background: var(--text);
-  color: var(--bg);
+  background: var(--mvv-text);
+  color: var(--mvv-bg);
   font-size: 26px;
-  font-weight: var(--fw-bold);
+  font-weight: var(--mvv-fw-bold);
   letter-spacing: -0.04em;
   line-height: 1;
   padding-bottom: 4px;
 }
 
 .title {
-  margin: var(--sp-5) 0 0;
-  font-size: var(--fs-22);
-  font-weight: var(--fw-semibold);
-  line-height: var(--lh-snug);
-  letter-spacing: var(--tracking-title);
+  margin: var(--mvv-sp-5) 0 0;
+  font-size: var(--mvv-fs-22);
+  font-weight: var(--mvv-fw-semibold);
+  line-height: var(--mvv-lh-snug);
+  letter-spacing: var(--mvv-tracking-title);
 }
 
 .text {
-  margin: var(--sp-1) 0 0;
-  font-size: var(--fs-15);
-  color: var(--text-2);
+  margin: var(--mvv-sp-1) 0 0;
+  font-size: var(--mvv-fs-15);
+  color: var(--mvv-text-2);
 }
 
 .widgetArea {
@@ -54,7 +54,7 @@
   align-items: center;
   justify-content: center;
   min-height: 72px;
-  margin-top: var(--sp-6);
+  margin-top: var(--mvv-sp-6);
 }
 
 .widget {
@@ -65,20 +65,20 @@
 
 .pending {
   margin: 0;
-  font-size: var(--fs-13);
-  color: var(--text-2);
+  font-size: var(--mvv-fs-13);
+  color: var(--mvv-text-2);
 }
 
 .error {
-  margin: var(--sp-2) 0 0;
-  font-size: var(--fs-13);
-  color: var(--danger);
+  margin: var(--mvv-sp-2) 0 0;
+  font-size: var(--mvv-fs-13);
+  color: var(--mvv-danger);
 }
 
 .hint {
-  margin: var(--sp-4) 0 0;
-  font-size: var(--fs-12);
-  color: var(--text-3);
+  margin: var(--mvv-sp-4) 0 0;
+  font-size: var(--mvv-fs-12);
+  color: var(--mvv-text-3);
 }
 
 .close {
@@ -86,20 +86,20 @@
   width: 100%;
   height: 48px;
   border: 0;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--mvv-border);
   background: transparent;
-  color: var(--text-2);
-  font-size: var(--fs-13);
-  font-weight: var(--fw-medium);
+  color: var(--mvv-text-2);
+  font-size: var(--mvv-fs-13);
+  font-weight: var(--mvv-fw-medium);
   cursor: pointer;
   transition:
-    background-color var(--dur-fast) var(--ease),
-    color var(--dur-fast) var(--ease);
+    background-color var(--mvv-dur-fast) var(--mvv-ease),
+    color var(--mvv-dur-fast) var(--mvv-ease);
 }
 
 .close:hover {
-  background: var(--surface-hover);
-  color: var(--text);
+  background: var(--mvv-surface-hover);
+  color: var(--mvv-text);
 }
 
 .close:focus-visible {

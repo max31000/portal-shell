@@ -1,5 +1,5 @@
 .trigger {
-  border-radius: var(--r-full);
+  border-radius: var(--mvv-r-full);
 }
 
 .avatar {
@@ -7,36 +7,36 @@
   align-items: center;
   justify-content: center;
   flex: none;
-  border-radius: var(--r-full);
-  background: var(--surface-2);
-  color: var(--text-2);
-  font-weight: var(--fw-semibold);
+  border-radius: var(--mvv-r-full);
+  background: var(--mvv-surface-2);
+  color: var(--mvv-text-2);
+  font-weight: var(--mvv-fw-semibold);
   letter-spacing: 0;
   object-fit: cover;
-  box-shadow: inset 0 0 0 1px var(--border);
+  box-shadow: inset 0 0 0 1px var(--mvv-border);
 }
 
 .backdrop {
   position: fixed;
   inset: 0;
-  z-index: var(--z-backdrop);
+  z-index: var(--shell-z-backdrop);
 }
 
 .dropdown {
-  padding: var(--sp-1);
+  padding: var(--mvv-sp-1);
   border: 0;
-  border-radius: var(--r-md);
-  background: var(--surface);
+  border-radius: var(--mvv-r-md);
+  background: var(--mvv-surface);
   box-shadow:
-    0 0 0 1px var(--border),
-    var(--shadow-lg);
+    0 0 0 1px var(--mvv-border),
+    var(--mvv-shadow-lg);
 }
 
 .header {
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-3);
+  gap: var(--mvv-sp-3);
+  padding: var(--mvv-sp-3);
 }
 
 .who {
@@ -44,34 +44,34 @@
 }
 
 .name {
-  font-size: var(--fs-13);
-  font-weight: var(--fw-semibold);
-  color: var(--text);
+  font-size: var(--mvv-fs-13);
+  font-weight: var(--mvv-fw-semibold);
+  color: var(--mvv-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .handle {
-  font-size: var(--fs-12);
-  color: var(--text-3);
+  font-size: var(--mvv-fs-12);
+  color: var(--mvv-text-3);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .divider {
-  margin: var(--sp-1) 0;
-  border-color: var(--border);
+  margin: var(--mvv-sp-1) 0;
+  border-color: var(--mvv-border);
 }
 
 .item {
   height: 34px;
-  border-radius: var(--r-sm);
-  font-size: var(--fs-13);
-  color: var(--text);
+  border-radius: var(--mvv-r-sm);
+  font-size: var(--mvv-fs-13);
+  color: var(--mvv-text);
 }
 
 .item[data-hovered] {
-  background: var(--surface-hover);
+  background: var(--mvv-surface-hover);
 }
