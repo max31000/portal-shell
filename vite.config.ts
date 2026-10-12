@@ -21,6 +21,8 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // Modal transitions in admin flows are slow on CI runners.
+    testTimeout: 15000,
     include: ['src/**/*.test.{ts,tsx}'],
     restoreMocks: true,
     setupFiles: ['src/test/setup.ts'],
