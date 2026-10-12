@@ -67,10 +67,37 @@ On boot the shell calls `GET /auth/api/me` (the server refreshes the access cook
 Anything other than a `200` with the expected JSON — e.g. before `mvv42-auth` is deployed — puts the shell in
 **unavailable** mode: no user slot, no locks, everything works exactly as without auth.
 
-When auth is up: «Войти» opens a Telegram Login Widget modal (bot from `VITE_TELEGRAM_BOT_USERNAME`, default
-`mv_cashpulse_bot`); tiles of apps that need sign-in and are not granted show a lock (`!anonymous && !granted`).
-Clicking a locked tile signed out opens sign-in and then the app (if the new session grants it); signed in, it
-shows «Нет доступа».
+When auth is up: «Войти» opens the sign-in modal; tiles of apps that need sign-in and are not granted show a lock
+(`!anonymous && !granted`). Clicking a locked tile signed out opens sign-in (subtitle «Чтобы открыть «X», войдите»)
+and then the app (if the new session grants it); signed in, it shows «Нет доступа».
+
+### Sign-in modal (code first)
+
+Registration is closed, and Telegram must not learn about — or send us data of — a stranger: the Telegram Login
+Widget (`telegram-widget.js`, bot from `VITE_TELEGRAM_BOT_USERNAME`, default `mv_cashpulse_bot`) is mounted only once
+the visitor has a checked invite code or says they already have an account.
+
+| Step | Shown | Telegram |
+|---|---|---|
+| **A «Код»** (default) | «Вход только по приглашению», code field, «Продолжить» → `POST /auth/api/invites/check`; contact @mvv42; «У меня уже есть аккаунт» → C | not loaded |
+| **B «Код принят»** | the service the code opens («Код даёт доступ к …» / «Код для входа»); the code goes as `X-Invite-Code`; «Изменить код» → A | widget |
+| **C «Есть аккаунт»** | «Если аккаунта нет, вход не выполнится и данные не сохранятся»; «Новый пользователь? Ввести код» → A | widget |
+
+- Start: a pending invite (`?invite=`) or a typed draft → A with one automatic check per opening (→ B on success);
+  otherwise the device marker → C; otherwise A. Every opening starts afresh.
+- `invite_*` from `/telegram` in B → A with the code and the error; `invite_required` in C → the marker is removed,
+  A with «Аккаунт не найден. Нужен код приглашения». In both cases the widget payload stays in memory (never in
+  storage) and is resent automatically as soon as a code passes the check — no second Telegram click.
+- A rate limit on the check is recognised by status 429 (nginx answers with HTML).
+- After sign-in: the invite's service if the login registered the user with an app invite, otherwise the service
+  sign-in was asked for. Leaving B/C removes the widget's script tag and iframe; `window.Telegram` and the cached
+  script stay (Telegram has been contacted by then anyway).
+
+**Device marker** `localStorage['mvv42-has-account'] = '1'` — set after every successful sign-in and whenever `/me`
+returns a signed-in user (so existing users get it on their first visit). It holds no PII and is **only a UI hint**
+(which step the modal opens on): every service on the same origin (`mvv42.ru`) can read and write it, so it is never
+used for access decisions. **Sign-out keeps it** — on a shared device the next person sees step C first and switches to
+«Новый пользователь? Ввести код» (accepted risk). Storage errors count as «no marker» (step A).
 
 The shell never refreshes on boot (`/me` does it implicitly). The only explicit `POST /auth/api/refresh` runs under
 `navigator.locks.request('mvv42-refresh')` (in-memory single-flight as fallback, 10 s request timeout), so tabs and
@@ -110,9 +137,15 @@ exist only for `isOwner`. Built with `@mvv42/kit` components + Mantine `Tabs`; l
 ## Invites
 
 `/?invite=<code>`: the shell removes the parameter at once (`history.replaceState`) and keeps the code in
-`sessionStorage` (`mvv42-invite`) → signed out: sign-in modal → `POST /auth/api/invites/redeem` → «Доступ к …
-открыт» (or «уже есть»), `AUTH_CHANGED` to the frame, the service opens. Errors (`invite_expired`,
-`invite_exhausted`, `invite_not_found`) drop the code with a notice; closing the sign-in modal drops it too.
+`sessionStorage` (`mvv42-invite`).
+
+- Signed out → sign-in modal on step A with the code, checked at once → B → Telegram with `X-Invite-Code`. A new
+  user is registered by that login (the response carries `invite`, no redeem); a known user → redeem below.
+- Signed in → `POST /auth/api/invites/redeem` → «Доступ к … открыт» (or «уже есть»), `AUTH_CHANGED` to the frame,
+  the service opens.
+
+Redeem errors (`invite_expired`, `invite_exhausted`, `invite_not_found`) drop the code with a notice; closing the
+sign-in modal drops it too.
 
 ## Design
 

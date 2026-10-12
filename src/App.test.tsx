@@ -35,6 +35,7 @@ function routes(owner: boolean, extra: Record<string, () => unknown> = {}) {
 beforeEach(() => {
   stubDom();
   sessionStorage.clear();
+  localStorage.clear();
   history.replaceState(null, '', '/');
 });
 afterEach(() => {
@@ -110,7 +111,9 @@ describe('invite link', () => {
     history.replaceState(null, '', '/?invite=kQ7vX2mP9aLr4TzW');
     mockFetch({ 'GET /registry.json': () => REGISTRY, 'GET /auth/api/me': () => ({ user: null, apps: APPS }) });
     renderWithKit(<App />);
-    expect(await screen.findByText('Войдите, чтобы принять приглашение.')).toBeTruthy();
+    // Code-first login: the modal opens on the code step with the invite code and checks it at once.
+    const field = (await screen.findByLabelText('Код приглашения')) as HTMLInputElement;
+    expect(field.value).toBe('kQ7vX2mP9aLr4TzW');
     expect(sessionStorage.getItem('mvv42-invite')).toBe('kQ7vX2mP9aLr4TzW');
   });
 });
@@ -215,11 +218,12 @@ describe('invite link and the frame', () => {
     renderWithKit(<App />);
     // Registry still loading → the invite flow waits; the visitor opens sign-in on their own.
     fireEvent.click(await screen.findByRole('button', { name: 'Войти' }));
-    expect(await screen.findByText('Один аккаунт Telegram для всех сервисов.')).toBeTruthy();
+    expect(await screen.findByText('Вход только по приглашению')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Отмена' }));
     expect(sessionStorage.getItem('mvv42-invite')).toBe('kQ7vX2mP9aLr4TzW');
     release();
-    expect(await screen.findByText('Войдите, чтобы принять приглашение.')).toBeTruthy();
+    expect(await screen.findByText('Вход только по приглашению')).toBeTruthy();
+    expect((screen.getByLabelText('Код приглашения') as HTMLInputElement).value).toBe('kQ7vX2mP9aLr4TzW');
     // Closing the invite's own prompt drops it.
     fireEvent.click(screen.getByRole('button', { name: 'Отмена' }));
     await waitFor(() => expect(sessionStorage.getItem('mvv42-invite')).toBeNull());

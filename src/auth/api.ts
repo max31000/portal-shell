@@ -259,3 +259,27 @@ export async function redeemInvite(code: string): Promise<RedeemResult> {
   }
   return { appId: body.appId as string | null, alreadyGranted: body.alreadyGranted === true, me };
 }
+
+export interface InviteCheck {
+  /** Service the code grants (null — a login-only code). */
+  appId: string | null;
+}
+
+/**
+ * POST /auth/api/invites/check `{ code }` (code-first login, spec 2026-10-12-code-first-login): validates an already
+ * normalised code without spending it. 200 `{ valid: true, appId }`; 400 `{ error: invalid_invite_format |
+ * invite_not_found | invite_expired | invite_exhausted }` → `AuthRequestError` with that `code`. A rate limit comes
+ * from nginx with an HTML body: recognised by status 429 alone (`code` null). Network failures reject as they are.
+ */
+export async function checkInvite(code: string, signal?: AbortSignal): Promise<InviteCheck> {
+  const res = await post('/invites/check', { code }, signal);
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    const error = isRecord(body) && typeof body.error === 'string' ? body.error : null;
+    throw new AuthRequestError(res.status, `Invite check failed (${res.status})`, error);
+  }
+  if (!isRecord(body) || body.valid !== true || !(typeof body.appId === 'string' || body.appId === null || body.appId === undefined)) {
+    throw new AuthRequestError(res.status, 'Unexpected invite check response');
+  }
+  return { appId: typeof body.appId === 'string' ? body.appId : null };
+}
