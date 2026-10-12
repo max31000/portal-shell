@@ -136,7 +136,7 @@ describe('LoginModal — A «Код»', () => {
     expect(await screen.findByText('Код принят')).toBeTruthy();
     expect(screen.getByText('Код даёт доступ к «Bond Analytics»')).toBeTruthy();
     expect(screen.getByText('K7PM-2XQ9-HD4T')).toBeTruthy();
-    expect(telegramScripts()).toHaveLength(1);
+    await waitFor(() => expect(telegramScripts()).toHaveLength(1));
     expect(screen.getByText('Telegram передаст имя, username и фото профиля.')).toBeTruthy();
     expect(liveRegion().getAttribute('aria-live')).toBe('polite');
     expect(liveRegion().textContent).toMatch(/код принят/i);
@@ -198,7 +198,7 @@ describe('LoginModal — A «Код»', () => {
     renderModal();
     fireEvent.click(screen.getByRole('button', { name: 'У меня уже есть аккаунт' }));
     expect(await screen.findByText('Если аккаунта нет, вход не выполнится и данные не сохранятся.')).toBeTruthy();
-    expect(telegramScripts()).toHaveLength(1);
+    await waitFor(() => expect(telegramScripts()).toHaveLength(1));
     expect(liveRegion().textContent).toMatch(/существующий аккаунт/);
   });
 });
@@ -260,8 +260,8 @@ describe('LoginModal — B «Код принят»', () => {
     await screen.findByText('Срок действия кода истёк');
     await enterCode('ABCD-EFGH-JKMN');
     expect(await screen.findByText('Код уже использован')).toBeTruthy();
-    expect(codeField().value).toBe('ABCD-EFGH-JKMN');
-    expectNoTelegram();
+    await waitFor(() => expect(codeField().value).toBe('ABCD-EFGH-JKMN'));
+    await waitFor(() => expectNoTelegram());
     await act(async () => {
       await new Promise((r) => setTimeout(r, 30));
     });
@@ -456,7 +456,7 @@ describe('LoginModal — pending invite / draft (decision 1) and reopening (deci
     await screen.findByText('Код принят');
     expect(checkInvite).toHaveBeenCalledTimes(1);
     // StrictMode mounts effects twice: still exactly one widget script.
-    expect(telegramScripts()).toHaveLength(1);
+    await waitFor(() => expect(telegramScripts()).toHaveLength(1));
     fireEvent.click(screen.getByRole('button', { name: 'Изменить код' }));
     await screen.findByText('Вход только по приглашению');
     expect(checkInvite).toHaveBeenCalledTimes(1);
@@ -481,7 +481,7 @@ describe('LoginModal — pending invite / draft (decision 1) and reopening (deci
   it('closing removes the widget', async () => {
     localStorage.setItem(ACCOUNT_MARKER_KEY, '1');
     const { setOpened } = renderModal();
-    expect(telegramScripts()).toHaveLength(1);
+    await waitFor(() => expect(telegramScripts()).toHaveLength(1));
     setOpened(false);
     await waitFor(() => expect(telegramScripts()).toHaveLength(0));
   });
