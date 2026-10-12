@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useComputedColorScheme } from '@mantine/core';
 import { useRegistry } from './useRegistry';
 import { useAuth, isAppLocked, type AuthSnapshot } from './auth/useAuth';
@@ -15,7 +15,12 @@ import type { AuthRequiredMessage, NavigateMessage } from './shell/messages';
 import { decideAuthRequired } from './shell/authRequired';
 import { NO_ACCESS_NOTICE, showNotice } from './shell/notice';
 import type { Service } from './types';
+import { ADMIN_ENTRY, ADMIN_ID, adminHash, parseAdminTab, type AdminTab } from './admin/route';
+import { useInviteFlow } from './invite/useInviteFlow';
 import classes from './App.module.css';
+
+// The owner console is a separate chunk: nobody else ever downloads it.
+const AdminRoute = lazy(() => import('./admin/AdminRoute').then((m) => ({ default: m.AdminRoute })));
 
 const THEME_COLOR = { light: '#fafafa', dark: '#0b0b0c' } as const;
 
@@ -37,8 +42,11 @@ export default function App() {
   const { services, loading, error } = useRegistry();
   const scheme = useComputedColorScheme('light');
   const auth = useAuth();
+  const isOwner = auth.status === 'authenticated' && auth.user?.isOwner === true;
 
   const [active, setActive] = useState<Service | null>(null);
+  /** Non-null while the `#/admin[/<tab>]` route is shown. */
+  const [adminTab, setAdminTab] = useState<AdminTab | null>(null);
   const [initialPath, setInitialPath] = useState('/');
   /** Bumped to remount the iframe (re-selecting the active service reloads it at its root). */
   const [frameNonce, setFrameNonce] = useState(0);
@@ -52,7 +60,12 @@ export default function App() {
 
   const applyHash = useCallback(
     (state: HashState) => {
-      if (services.length === 0) return;
+      if (state.serviceId === ADMIN_ID) {
+        setActive(null);
+        setAdminTab(parseAdminTab(state.servicePath));
+        return;
+      }
+      setAdminTab(null);
       const found = state.serviceId ? (services.find((s) => s.id === state.serviceId) ?? null) : null;
       setActive(found);
       setInitialPath(state.servicePath);
@@ -60,11 +73,11 @@ export default function App() {
     [services],
   );
 
-  // Initialise from the hash once the registry has loaded.
+  // Initialise from the hash once the registry has loaded (or failed — `#/admin` does not need it).
   useEffect(() => {
-    if (services.length === 0) return;
+    if (loading) return;
     applyHash(parseHash(window.location.hash));
-  }, [services, applyHash]);
+  }, [loading, applyHash]);
 
   // Browser Back / Forward.
   useEffect(() => {
@@ -76,16 +89,29 @@ export default function App() {
   /** `null` → home. Always opens a service at its root (re-selecting the active one reloads it there). */
   const select = useCallback((service: Service | null) => {
     if (service && service.id === activeRef.current?.id) setFrameNonce((n) => n + 1);
+    setAdminTab(null);
     setActive(service);
     setInitialPath('/');
     window.location.hash = service ? buildHash(service.id, '/') : '#/';
   }, []);
 
+  const openAdmin = useCallback((tab: AdminTab = 'overview') => {
+    setActive(null);
+    setAdminTab(tab);
+    window.location.hash = adminHash(tab);
+  }, []);
+
+  /** Tab switches replace the entry: Back leaves the console instead of walking its tabs. */
+  const changeAdminTab = useCallback((tab: AdminTab) => {
+    setAdminTab(tab);
+    history.replaceState(history.state, '', adminHash(tab));
+  }, []);
+
   // ----- Document chrome -----
 
   useEffect(() => {
-    document.title = active ? `${active.name} · mvv42` : 'mvv42';
-  }, [active]);
+    document.title = adminTab !== null && isOwner ? 'Админка · mvv42' : active ? `${active.name} · mvv42` : 'mvv42';
+  }, [active, adminTab, isOwner]);
 
   useEffect(() => {
     document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
@@ -100,6 +126,8 @@ export default function App() {
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginDismissed, setLoginDismissed] = useState(false);
   const [afterLogin, setAfterLogin] = useState<Service | null>(null);
+  /** Subtitle of the login modal when sign-in is asked for a reason (an invite). */
+  const [loginMessage, setLoginMessage] = useState<string | undefined>(undefined);
 
   const authAvailable = auth.status === 'anonymous' || auth.status === 'authenticated';
   // `?login=1` opens the modal as soon as we know the visitor is signed out.
@@ -118,17 +146,33 @@ export default function App() {
     }
   }, [auth.status, loginRequest]);
 
-  const openLogin = useCallback((then: Service | null = null) => {
+  const openLogin = useCallback((then: Service | null = null, message?: string) => {
     setAfterLogin(then);
+    setLoginMessage(message);
     setLoginOpen(true);
   }, []);
+
+  // ----- Invite links (`?invite=CODE`, spec §10.10) -----
+
+  const invite = useInviteFlow({
+    authStatus: auth.status,
+    ready: !loading,
+    services,
+    requestLogin: (message) => openLogin(null, message),
+    applyMe: auth.apply,
+    refreshAuth: auth.refresh,
+    onAuthChanged: () => frameRef.current?.post({ type: 'AUTH_CHANGED' }),
+    openService: (service) => select(service),
+  });
 
   const closeLogin = useCallback(() => {
     setLoginOpen(false);
     setLoginDismissed(true);
     setAfterLogin(null);
+    setLoginMessage(undefined);
     clearLoginParams();
-  }, []);
+    invite.cancel();
+  }, [invite]);
 
   const handleTelegramAuth = useCallback(
     async (data: TelegramAuthData) => {
@@ -136,6 +180,7 @@ export default function App() {
       frameRef.current?.post({ type: 'AUTH_CHANGED' });
       setLoginOpen(false);
       setLoginDismissed(true);
+      setLoginMessage(undefined);
       if (loginRequest.requested && loginRequest.returnTo) {
         const target = sanitizeReturnUrl(loginRequest.returnTo);
         if (target !== '/') {
@@ -246,7 +291,7 @@ export default function App() {
   // ----- Render -----
 
   const userSlot = !authAvailable ? undefined : auth.user ? (
-    <UserMenu user={auth.user} onLogout={() => void handleLogout()} />
+    <UserMenu user={auth.user} onLogout={() => void handleLogout()} onAdmin={isOwner ? () => openAdmin() : undefined} />
   ) : (
     <SignInButton onClick={() => openLogin()} />
   );
@@ -258,11 +303,25 @@ export default function App() {
       onSelect={select}
       isLocked={isLocked}
       onLockedSelect={onLockedSelect}
+      extra={isOwner ? { entry: ADMIN_ENTRY, active: adminTab !== null, onSelect: () => openAdmin() } : undefined}
     />
   );
 
   let content;
-  if (loading) {
+  if (adminTab !== null) {
+    content = (
+      <Suspense fallback={<div className={classes.status} aria-busy="true" />}>
+        <AdminRoute
+          authStatus={auth.status}
+          user={auth.user}
+          tab={adminTab}
+          onTabChange={changeAdminTab}
+          services={services}
+          onHome={() => select(null)}
+        />
+      </Suspense>
+    );
+  } else if (loading) {
     content = <div className={classes.status} aria-busy="true" />;
   } else if (error) {
     content = (
@@ -293,9 +352,14 @@ export default function App() {
 
   return (
     <>
-      <TopBar active={active} onHome={() => select(null)} launcher={launcher} userSlot={userSlot} />
+      <TopBar
+        active={adminTab !== null && isOwner ? ADMIN_ENTRY : active}
+        onHome={() => select(null)}
+        launcher={launcher}
+        userSlot={userSlot}
+      />
       <div className={classes.main}>{content}</div>
-      {authAvailable && <LoginModal opened={modalOpened} onClose={closeLogin} onAuth={handleTelegramAuth} />}
+      {authAvailable && <LoginModal opened={modalOpened} onClose={closeLogin} onAuth={handleTelegramAuth} message={loginMessage} />}
     </>
   );
 }

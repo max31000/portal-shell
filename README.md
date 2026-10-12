@@ -4,7 +4,7 @@ The shell for **https://mvv42.ru**: a small React SPA served at `/` that hosts e
 `<iframe src="/<id>/">`. It owns the top bar, the app launcher, the home page, sign-in (via `mvv42-auth`) and the
 light/dark theme. Each service stays a standalone app at `/<id>/`.
 
-Stack: React 19, Vite, Mantine 9, TypeScript, Vitest.
+Stack: React 19, Vite, Mantine 9 (≥ 9.4), `@mvv42/kit`, TypeScript, Vitest.
 
 ## Routing
 
@@ -16,6 +16,8 @@ The shell routes in the hash: `#/<serviceId><path>` → iframe `src = <service.p
 | `/#/cashpulse` | `/cashpulse/` |
 | `/#/cashpulse/operations?x=1` | `/cashpulse/operations?x=1` |
 | `/?login=1&return=/bonds/` | Opens sign-in, then returns to `/bonds/` (same-origin paths only) |
+| `/#/admin`, `/#/admin/<tab>` | Admin console (`users`, `apps`, `invites`, `log`) — owner only (`me.user.isOwner`); a 404 view for everyone else |
+| `/?invite=<code>` | Invite link: sign in if needed, redeem, open the service (see Invites) |
 
 ## Registry (`public/registry.json`)
 
@@ -82,9 +84,10 @@ iframes never rotate the refresh token concurrently.
 4. Signed in and unchanged → if the app is locked for this user, a «Нет доступа к сервису» notice; otherwise
    `AUTH_CHANGED`, at most once per service per 10 s (a service stuck on 401 cannot make the shell loop).
 
-`/me` (and the `/telegram` login response) is `{ user: { id, telegramId, name, username|null, photoUrl|null,
-isAdmin } | null, apps: [{ id, anonymous, access, granted }] }`; `id`/`telegramId` arrive as JSON numbers and are
-normalised to strings. Sign-out always posts `AUTH_CHANGED`, even if the request failed (an error notice is shown).
+`/me` (and the `/telegram` login response) is the kit's `Me`: `{ user: { id, telegramId, name, username|null,
+photoUrl|null, isAdmin, isOwner } | null, apps: [{ id, anonymous, access, granted }] }` (ids are JSON numbers; an
+older auth without `isOwner` means «no owner»). The shell keeps its own client (`src/auth/api.ts`: any non-200 /
+malformed `/me` → unavailable mode); admin calls and the invite redeem use the kit's `apiJson`. Sign-out always posts `AUTH_CHANGED`, even if the request failed (an error notice is shown).
 
 ## Develop
 
@@ -96,8 +99,27 @@ npm run lint
 npm run build      # tsc -b && vite build → dist/
 ```
 
-Design tokens (type scale, colours, radii, shadows, motion) live in `src/styles/tokens.css`; the Mantine theme in
-`src/theme.ts` maps onto them.
+## Admin console (`#/admin`)
+
+Owner-only UI over the mvv42-auth admin API (`src/admin/api.ts` — typed client for every `/auth/api/admin/*`
+endpoint): **Обзор** (metrics, services), **Пользователи** (search, drawer: grants, admin flag, block, sessions,
+recent logins), **Сервисы** (anonymous / access mode), **Инвайты** (create → link shown once, list, delete),
+**Журнал** (login events, paged with `nextBefore`). Entry points — the «Админка» launcher tile and user-menu item —
+exist only for `isOwner`. Built with `@mvv42/kit` components + Mantine `Tabs`; loaded as a separate chunk.
+
+## Invites
+
+`/?invite=<code>`: the shell removes the parameter at once (`history.replaceState`) and keeps the code in
+`sessionStorage` (`mvv42-invite`) → signed out: sign-in modal → `POST /auth/api/invites/redeem` → «Доступ к …
+открыт» (or «уже есть»), `AUTH_CHANGED` to the frame, the service opens. Errors (`invite_expired`,
+`invite_exhausted`, `invite_not_found`) drop the code with a notice; closing the sign-in modal drops it too.
+
+## Design
+
+The shell is built on [`@mvv42/kit`](https://github.com/max31000/mvv42-kit) (`accent: 'zinc'`): `Mvv42Provider`
+(theme, shared `mvv42-color-scheme` setting, notifications), `@mvv42/kit/styles.css` (`--mvv-*` tokens), the
+`mvv42Html()` Vite plugin (anti-flash colour-scheme script) and `resolve.dedupe`. Shell-only CSS (layers, small
+fixes) lives in `src/styles/global.css`; components use CSS modules on `--mvv-*` tokens.
 
 ## Deploy
 

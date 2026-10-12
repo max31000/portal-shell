@@ -16,6 +16,14 @@ interface AppLauncherProps {
   /** Locked tiles are shown with a lock badge; selecting one calls `onLockedSelect` instead. */
   isLocked?: (service: Service) => boolean;
   onLockedSelect?: (service: Service) => void;
+  /** Extra tile after the services (the owner's «Админка»). */
+  extra?: LauncherExtra;
+}
+
+export interface LauncherExtra {
+  entry: Service;
+  active: boolean;
+  onSelect: () => void;
 }
 
 interface Position {
@@ -38,7 +46,7 @@ function DotsIcon() {
   );
 }
 
-export function AppLauncher({ services, activeId, onSelect, isLocked, onLockedSelect }: AppLauncherProps) {
+export function AppLauncher({ services, activeId, onSelect, isLocked, onLockedSelect, extra }: AppLauncherProps) {
   const [open, setOpen] = useState(false);
   const [focusIndex, setFocusIndex] = useState(0);
   // Opened with the mouse: focus the panel itself so no tile shows a focus ring
@@ -50,7 +58,7 @@ export function AppLauncher({ services, activeId, onSelect, isLocked, onLockedSe
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const menuId = useId();
 
-  const count = services.length + 1; // + «Главная»
+  const count = services.length + 1 + (extra ? 1 : 0); // + «Главная» (+ extra)
 
   const measure = useCallback(() => {
     const rect = buttonRef.current?.getBoundingClientRect();
@@ -138,6 +146,11 @@ export function AppLauncher({ services, activeId, onSelect, isLocked, onLockedSe
   }
 
   function choose(service: Service | null) {
+    if (extra && service === extra.entry) {
+      close(false);
+      extra.onSelect();
+      return;
+    }
     if (service && isLocked?.(service)) {
       close(false);
       onLockedSelect?.(service);
@@ -147,7 +160,7 @@ export function AppLauncher({ services, activeId, onSelect, isLocked, onLockedSe
     onSelect(service);
   }
 
-  const items: (Service | null)[] = [null, ...services];
+  const items: (Service | null)[] = [null, ...services, ...(extra ? [extra.entry] : [])];
 
   return (
     <>
@@ -189,11 +202,12 @@ export function AppLauncher({ services, activeId, onSelect, isLocked, onLockedSe
               <div className={classes.handle} aria-hidden="true" />
               <div className={classes.grid}>
                 {items.map((service, i) => {
-                  const locked = service ? !!isLocked?.(service) : false;
-                  const current = service ? service.id === activeId : activeId === null;
+                  const isExtra = !!extra && service === extra.entry;
+                  const locked = service && !isExtra ? !!isLocked?.(service) : false;
+                  const current = isExtra ? !!extra?.active : service ? service.id === activeId : activeId === null && !extra?.active;
                   return (
                     <button
-                      key={service?.id ?? '__home'}
+                      key={isExtra ? '__extra' : (service?.id ?? '__home')}
                       ref={(el) => {
                         itemRefs.current[i] = el;
                       }}
@@ -221,7 +235,7 @@ export function AppLauncher({ services, activeId, onSelect, isLocked, onLockedSe
                         )}
                       </span>
                       <span className={classes.label}>{service ? service.name : 'Главная'}</span>
-                      {locked && <span className="visually-hidden">, нужен доступ</span>}
+                      {locked && <span className="mvv-visually-hidden">, нужен доступ</span>}
                     </button>
                   );
                 })}
