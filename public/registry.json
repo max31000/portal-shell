@@ -15,7 +15,8 @@
       "description": "Калькулятор ИТ-ипотеки",
       "icon": "home-dollar",
       "path": "/credit_calc/",
-      "color": "#40c057"
+      "color": "#40c057",
+      "auth": "shared"
     },
     {
       "id": "bonds",
