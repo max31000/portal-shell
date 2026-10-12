@@ -27,6 +27,15 @@
       "path": "/bonds/",
       "color": "#7048e8",
       "auth": "shared"
+    },
+    {
+      "id": "keysynth",
+      "name": "KeySynth",
+      "description": "Синтезатор для MIDI-клавиатуры",
+      "icon": "piano",
+      "path": "/keysynth/",
+      "color": "#f76707",
+      "auth": "shared"
     }
   ]
 }
