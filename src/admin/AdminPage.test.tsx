@@ -146,6 +146,20 @@ describe('overview', () => {
     expect(await screen.findByText('23')).toBeTruthy();
   });
 
+  it('shows failed invite-code checks next to the attempts without an invite (code-first login)', async () => {
+    mockFetch({
+      'GET /auth/api/admin/overview': () => ({ ...OVERVIEW, deniedUnregistered7d: 23, failedInviteChecks7d: 4 }),
+    });
+    renderWithKit(<Harness />);
+    expect(await screen.findByText('новые люди без кода · 4 неверных кода')).toBeTruthy();
+  });
+
+  it('an auth without `failedInviteChecks7d` keeps the plain hint', async () => {
+    mockFetch({ 'GET /auth/api/admin/overview': () => ({ ...OVERVIEW, deniedUnregistered7d: 23 }) });
+    renderWithKit(<Harness />);
+    expect(await screen.findByText('новые люди без кода')).toBeTruthy();
+  });
+
   it('shows an error state with retry', async () => {
     let fail = true;
     mockFetch({

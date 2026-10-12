@@ -21,6 +21,8 @@ export function OverviewTab({ services, onOpenApps }: OverviewTabProps) {
   const metrics = data ?? { users: 0, activeSessions: 0, logins24h: 0, logins7d: 0, blocked: 0, apps: [] };
   // Closed registration (auth ≥ the invite-login release); an older auth during the rollout has no such field.
   const denied = typeof metrics.deniedUnregistered7d === 'number' ? metrics.deniedUnregistered7d : null;
+  // Code-first login: failed invite-code checks (absent on an auth without `/invites/check`).
+  const failedChecks = typeof metrics.failedInviteChecks7d === 'number' ? metrics.failedInviteChecks7d : null;
 
   return (
     <>
@@ -53,7 +55,11 @@ export function OverviewTab({ services, onOpenApps }: OverviewTabProps) {
             <Metric
               label="Попыток входа без приглашения (7 дн.)"
               value={denied}
-              hint="новые люди без кода"
+              hint={
+                failedChecks === null
+                  ? 'новые люди без кода'
+                  : `новые люди без кода · ${failedChecks} ${plural(failedChecks, 'неверный код', 'неверных кода', 'неверных кодов')}`
+              }
               loading={loading}
             />
           </>
