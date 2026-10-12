@@ -131,7 +131,10 @@ describe('LoginModal: invite code', () => {
     expect(document.activeElement).toBe(codeField());
 
     const cont = screen.getByRole('button', { name: 'Продолжить' }) as HTMLButtonElement;
-    expect(cont.disabled).toBe(true);
+    expect(cont.disabled).toBe(false);
+    // The widget payload never lands in storage (only the typed code does).
+    for (const store of [sessionStorage, localStorage])
+      for (let i = 0; i < store.length; i++) expect(store.getItem(store.key(i) as string)).not.toContain(PAYLOAD.hash);
     fireEvent.change(codeField(), { target: { value: 'k7pm 2xq9 hd4t' } });
     fireEvent.click(cont);
     await waitFor(() => expect(onAuth).toHaveBeenCalledTimes(2));
@@ -198,6 +201,33 @@ describe('LoginModal: invite code', () => {
     renderInviteModal(vi.fn().mockRejectedValue(deny(code, status)));
     clickTelegram();
     expect(await screen.findByText(text)).toBeTruthy();
+  });
+
+  it('server-side code error with a slow answer: focus lands in the (re-enabled) field', async () => {
+    let reject: (e: unknown) => void = () => {};
+    const onAuth = vi.fn(() => new Promise<void>((_, r) => (reject = r)));
+    renderInviteModal(onAuth, 'K7PM-2XQ9-HD4T');
+    clickTelegram();
+    expect(codeField().disabled).toBe(true);
+    (document.body as HTMLElement).focus();
+    await act(async () => reject(deny('invite_not_found')));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe('Код не найден');
+    expect(codeField().disabled).toBe(false);
+    await waitFor(() => expect(document.activeElement).toBe(codeField()));
+  });
+
+  it('429 without a body on the first click: rate-limit text, the payload is kept, «Продолжить» resends it without a code', async () => {
+    const onAuth = vi
+      .fn()
+      .mockRejectedValueOnce(new AuthRequestError(429, 'Login failed (429)', null))
+      .mockResolvedValueOnce(undefined);
+    renderInviteModal(onAuth);
+    clickTelegram();
+    expect(await screen.findByText('Слишком много попыток — повторите через минуту')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Продолжить' }));
+    await waitFor(() => expect(onAuth).toHaveBeenCalledTimes(2));
+    expect(onAuth.mock.calls[1]).toEqual([PAYLOAD, null]);
   });
 
   it('a network failure shows the generic message', async () => {

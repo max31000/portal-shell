@@ -120,6 +120,14 @@ export function LoginModal({ opened, onClose, onAuth, message, inviteCode }: Log
     }
   }
   const codeRef = useRef<HTMLInputElement>(null);
+  /**
+   * Bumped to move focus into the code field. Focus happens in an effect, after the render that re-enables the
+   * input (it is disabled while a request runs, and focusing a disabled input is a no-op).
+   */
+  const [focusRequest, setFocusRequest] = useState(0);
+  useEffect(() => {
+    if (focusRequest > 0) codeRef.current?.focus();
+  }, [focusRequest]);
 
   function fail(error: unknown, data: TelegramAuthData) {
     const reason = error instanceof AuthRequestError ? error.code : null;
@@ -130,12 +138,12 @@ export function LoginModal({ opened, onClose, onAuth, message, inviteCode }: Log
       setNeedCode(true);
       setCodeError(null);
       setFormError(null);
-      codeRef.current?.focus();
+      setFocusRequest((n) => n + 1);
     } else if (reason && CODE_ERRORS[reason]) {
       setHeld(data);
       setCodeError(CODE_ERRORS[reason]);
       setFormError(null);
-      codeRef.current?.focus();
+      setFocusRequest((n) => n + 1);
     } else if (reason === 'Expired' || reason === 'Replayed') {
       // The payload is stale (older than an hour, or burnt): a new Telegram click is needed; the code stays.
       setHeld(null);
@@ -146,6 +154,7 @@ export function LoginModal({ opened, onClose, onAuth, message, inviteCode }: Log
       setFormError(LOGIN_TEXT.blocked);
     } else if (reason === 'rate_limited' || status === 429) {
       // Rejected before the payload was checked: «Продолжить» may retry it later.
+      setHeld(data);
       setFormError(LOGIN_TEXT.rateLimited);
     } else {
       setHeld(null);
@@ -162,7 +171,7 @@ export function LoginModal({ opened, onClose, onAuth, message, inviteCode }: Log
         setHeld(data);
         setCodeError(LOGIN_TEXT.badFormat);
         setFormError(null);
-        codeRef.current?.focus();
+        setFocusRequest((n) => n + 1);
         return;
       }
       header = normalized.value;
@@ -194,7 +203,8 @@ export function LoginModal({ opened, onClose, onAuth, message, inviteCode }: Log
   }
 
   const pending = phase === 'pending';
-  const canContinue = held !== null && code.trim() !== '' && !pending;
+  // An empty field is allowed too: the held payload is resent without the header (e.g. after a 429).
+  const canContinue = held !== null && !pending;
 
   return (
     <Modal
@@ -251,7 +261,7 @@ export function LoginModal({ opened, onClose, onAuth, message, inviteCode }: Log
             placeholder="XXXX-XXXX-XXXX"
             value={code}
             onChange={(e) => onCodeChange(e.currentTarget.value)}
-            error={codeError}
+            error={codeError ? <span role="alert">{codeError}</span> : null}
             autoComplete="off"
             autoCapitalize="characters"
             spellCheck={false}

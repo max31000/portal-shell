@@ -110,6 +110,14 @@ describe('loginTelegram', () => {
     for (const call of fetchMock.mock.calls as unknown[][]) expect(new Headers((call[1] as RequestInit).headers).has('X-Invite-Code')).toBe(false);
   });
 
+  it('429 with an empty body: status kept, no code', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 429 })));
+    await expect(loginTelegram({ id: 1, first_name: 'A', auth_date: 1, hash: 'h' })).rejects.toMatchObject({
+      status: 429,
+      code: null,
+    });
+  });
+
   it('carries the `{error}` code of a failed login', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'invite_required' }, 403)));
     await expect(loginTelegram({ id: 1, first_name: 'A', auth_date: 1, hash: 'h' })).rejects.toMatchObject({

@@ -111,6 +111,26 @@ describe('invite link + closed registration', () => {
     expect(sessionStorage.getItem('mvv42-invite-draft')).toBeNull();
   });
 
+  it('a draft typed before a reload prefills the field and is cleared after a successful login', async () => {
+    sessionStorage.setItem('mvv42-invite-draft', 'k7pm 2xq9 hd4t');
+    const { find } = mockFetch({
+      'GET /registry.json': () => REGISTRY,
+      'GET /auth/api/me': () => ANON,
+      'POST /auth/api/telegram': () => ({ ...SIGNED_IN, invite: { appId: null } }),
+    });
+    renderWithKit(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Войти' }));
+    await screen.findByText('Вход только по приглашению');
+    expect(codeField().value).toBe('k7pm 2xq9 hd4t');
+    clickTelegram();
+    expect(await screen.findByText('Добро пожаловать')).toBeTruthy();
+    expect(inviteHeader(find('POST', '/auth/api/telegram')[0])).toBe('K7PM2XQ9HD4T');
+    expect(sessionStorage.getItem('mvv42-invite-draft')).toBeNull();
+    expect(sessionStorage.getItem('mvv42-invite')).toBeNull();
+    for (const store of [sessionStorage, localStorage])
+      for (let i = 0; i < store.length; i++) expect(store.getItem(store.key(i) as string)).not.toContain(PAYLOAD.hash);
+  });
+
   it('known user who typed a code: quiet redeem; «already granted» shows nothing', async () => {
     const { find } = mockFetch({
       'GET /registry.json': () => REGISTRY,

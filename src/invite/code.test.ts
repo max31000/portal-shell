@@ -1,52 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import { formatInviteCode, normalizeInviteCode } from './code';
+// Shared with mvv42-auth's tests: the server must produce exactly the same results.
+import vectors from './code-vectors.json';
 
-const LEGACY = 'kQ7vX2mP9aLr4TzW_8-bNc3Y'; // 24-char base64url (pre-closed-registration links)
+interface Vector {
+  input: string;
+  result: 'normalized' | 'legacy' | 'invalid';
+  value?: string;
+  note: string;
+}
 
-describe('normalizeInviteCode (spec review decision 6, same as the server)', () => {
-  it.each([
-    ['canonical', 'K7PM-2XQ9-HD4T', 'K7PM2XQ9HD4T'],
-    ['no dashes', 'K7PM2XQ9HD4T', 'K7PM2XQ9HD4T'],
-    ['lower case', 'k7pm-2xq9-hd4t', 'K7PM2XQ9HD4T'],
-    ['spaces and padding', '  K7PM 2XQ9  HD4T \n', 'K7PM2XQ9HD4T'],
-    ['en / em dash, minus, non-breaking hyphen', 'K7PM–2XQ9—HD4T', 'K7PM2XQ9HD4T'],
-    ['minus sign and NB hyphen', 'K7PM−2XQ9‑HD4T', 'K7PM2XQ9HD4T'],
-    ['Crockford O → 0', 'KOPM-2XQ9-HD4T', 'K0PM2XQ9HD4T'],
-    ['Crockford I and L → 1', 'KIPM-2XQ9-HDLT', 'K1PM2XQ9HD1T'],
-    ['lower-case o, i, l', 'kopm-2xq9-hdit', 'K0PM2XQ9HD1T'],
-    ['Cyrillic upper look-alikes', 'АВЕК-МНОР-СТХ2', 'ABEKMH0PCTX2'],
-    ['Cyrillic lower look-alikes', 'авек-мнор-стх2', 'ABEKMH0PCTX2'],
-    ['mixed Cyrillic and Latin', 'К7РМ-2ХQ9-НD4Т', 'K7PM2XQ9HD4T'],
-  ])('%s: %j → %s', (_label, raw, expected) => {
-    expect(normalizeInviteCode(raw)).toEqual({ ok: true, value: expected, legacy: false });
+const LEGACY = 'kQ7vX2mP9aLr4TzW_8-bNc3Y';
+
+describe('normalizeInviteCode (spec review decision 6, shared vectors)', () => {
+  it.each((vectors as Vector[]).map((v) => [v.note, v] as const))('%s', (_note, v) => {
+    const n = normalizeInviteCode(v.input);
+    if (v.result === 'invalid') expect(n).toEqual({ ok: false });
+    else expect(n).toEqual({ ok: true, value: v.value, legacy: v.result === 'legacy' });
   });
 
-  it.each([
-    ['legacy base64url', LEGACY],
-    ['legacy with padding', `  ${LEGACY} `],
-  ])('%s is used as is (trimmed)', (_label, raw) => {
-    expect(normalizeInviteCode(raw)).toEqual({ ok: true, value: LEGACY, legacy: true });
-  });
-
-  it.each([
-    ['empty', ''],
-    ['blank', '   '],
-    ['too short', 'K7PM-2XQ9-HD4'],
-    ['too long (13)', 'K7PM-2XQ9-HD4TT'],
-    ['U is not Crockford', 'U7PM-2XQ9-HD4T'],
-    ['punctuation', 'K7PM.2XQ9.HD4T'],
-    ['non-look-alike Cyrillic', 'ЖЖЖЖ-ЖЖЖЖ-ЖЖЖЖ'],
-    ['short legacy-looking token', 'abc_def-123'],
-    ['legacy with a space inside', 'kQ7vX2mP9aLr 4TzW_8-bNc3Y'],
-    ['emoji', 'K7PM-2XQ9-HD4🙂'],
-  ])('%s → invalid', (_label, raw) => {
-    expect(normalizeInviteCode(raw)).toEqual({ ok: false });
+  it('covers every outcome', () => {
+    const kinds = new Set((vectors as Vector[]).map((v) => v.result));
+    expect([...kinds].sort()).toEqual(['invalid', 'legacy', 'normalized']);
   });
 
   it('always yields ASCII (safe for the X-Invite-Code header)', () => {
-    for (const raw of ['авек-мнор-стх2', 'К7РМ-2ХQ9-НD4Т', LEGACY]) {
-      const n = normalizeInviteCode(raw);
-      expect(n.ok && /^[\x21-\x7e]+$/.test(n.value)).toBe(true);
+    for (const v of vectors as Vector[]) {
+      const n = normalizeInviteCode(v.input);
+      if (n.ok) expect(/^[\x21-\x7e]+$/.test(n.value)).toBe(true);
     }
   });
 });

@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   getMe,
-  loginTelegram,
   logout as apiLogout,
   type AppAccess,
   type AuthUser,
   type MeResponse,
-  type TelegramAuthData,
 } from './api';
 
 export type AuthStatus = 'unavailable' | 'loading' | 'anonymous' | 'authenticated';
@@ -15,13 +13,11 @@ export interface AuthState {
   status: AuthStatus;
   user: AuthUser | null;
   apps: AppAccess[];
-  /** Resolves to the new auth snapshot; rejects if the login request failed. */
-  login: (data: TelegramAuthData) => Promise<AuthSnapshot>;
   /** Always re-reads `/me` afterwards; rejects (after that) if the logout request failed. */
   logout: () => Promise<void>;
   /** Re-read `/me` (the server refreshes the access cookie implicitly if needed). Resolves to the new snapshot. */
   refresh: () => Promise<AuthSnapshot>;
-  /** Adopt a `/me` body obtained elsewhere (e.g. the invite redeem response). */
+  /** Adopt a `/me` body obtained elsewhere (the `/telegram` login in App, the invite redeem response). */
   apply: (me: MeResponse) => AuthSnapshot;
 }
 
@@ -64,12 +60,6 @@ export function useAuth(): AuthState {
     };
   }, [load]);
 
-  const login = useCallback(async (data: TelegramAuthData) => {
-    const next = fromMe((await loginTelegram(data)).me);
-    if (mounted.current) setSnap(next);
-    return next;
-  }, []);
-
   const logout = useCallback(async () => {
     try {
       await apiLogout();
@@ -87,8 +77,8 @@ export function useAuth(): AuthState {
   }, []);
 
   return useMemo(
-    () => ({ ...snap, login, logout, refresh, apply }),
-    [snap, login, logout, refresh, apply],
+    () => ({ ...snap, logout, refresh, apply }),
+    [snap, logout, refresh, apply],
   );
 }
 
