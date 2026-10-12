@@ -22,7 +22,7 @@ describe('resolveIcon', () => {
   });
 
   it('includes every registry icon', () => {
-    for (const name of ['chart-area-line', 'home-dollar', 'chart-candle']) {
+    for (const name of ['chart-area-line', 'home-dollar', 'chart-candle', 'piano']) {
       expect(ICONS[name]).toBeDefined();
     }
   });
