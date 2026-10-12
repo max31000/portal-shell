@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react';
 import type { Service } from './types';
 
+/** Ids reserved by mvv42-auth / the shell (`#/admin` is the owner console) — never services. */
+export const RESERVED_IDS: ReadonlySet<string> = new Set(['admin', 'auth', 'api', 'assets', 'health', '.well-known', 'portal']);
+
+export function visibleServices(services: Service[] | undefined): Service[] {
+  return (services ?? []).filter((s) => s && typeof s.id === 'string' && !RESERVED_IDS.has(s.id));
+}
+
 interface RegistryState {
   services: Service[];
   loading: boolean;
@@ -24,7 +31,7 @@ export function useRegistry(): RegistryState {
       })
       .then((data: { services: Service[] }) => {
         if (!cancelled) {
-          setState({ services: data.services ?? [], loading: false, error: null });
+          setState({ services: visibleServices(data.services), loading: false, error: null });
         }
       })
       .catch((err: Error) => {

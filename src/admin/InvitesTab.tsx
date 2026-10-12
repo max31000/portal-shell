@@ -212,6 +212,10 @@ export function CreateInviteModal({ opened, apps, onClose, onCreated }: CreateIn
       size={compact ? '100%' : 'md'}
       fullScreen={compact}
       zIndex={300}
+      // The link exists only in this dialog: once it is shown, only «Готово» closes it.
+      closeOnClickOutside={!created}
+      closeOnEscape={!created}
+      withCloseButton={!created}
     >
       {created ? (
         <Stack gap="md">

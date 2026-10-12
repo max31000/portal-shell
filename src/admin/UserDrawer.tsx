@@ -17,6 +17,8 @@ interface UserDrawerProps {
   userId: number | null;
   apps: AdminApp[];
   services: Service[];
+  /** Telegram id of the signed-in owner. */
+  currentUserId?: number;
   onClose: () => void;
   /** Something changed — reload the list. */
   onChanged: () => void;
@@ -30,7 +32,7 @@ function implicitAccess(app: AdminApp, user: AdminUser): string | null {
   return null;
 }
 
-export function UserDrawer({ userId, apps, services, onClose, onChanged }: UserDrawerProps) {
+export function UserDrawer({ userId, apps, services, currentUserId, onClose, onChanged }: UserDrawerProps) {
   const compact = useMediaQuery('(max-width: 640px)');
   const [lastId, setLastId] = useState(userId);
   if (userId !== null && userId !== lastId) setLastId(userId);
@@ -47,7 +49,14 @@ export function UserDrawer({ userId, apps, services, onClose, onChanged }: UserD
       zIndex={300}
     >
       {shownId !== null && (
-        <UserDetail key={shownId} userId={shownId} apps={apps} services={services} onChanged={onChanged} />
+        <UserDetail
+          key={shownId}
+          userId={shownId}
+          apps={apps}
+          services={services}
+          currentUserId={currentUserId}
+          onChanged={onChanged}
+        />
       )}
     </Drawer>
   );
@@ -57,18 +66,21 @@ function UserDetail({
   userId,
   apps,
   services,
+  currentUserId,
   onChanged,
 }: {
   userId: number;
   apps: AdminApp[];
   services: Service[];
+  currentUserId?: number;
   onChanged: () => void;
 }) {
   const { data, error, loading, reload } = useResource(() => adminApi.user(userId), userId);
   const [busy, setBusy] = useState<string | null>(null);
   const [dialog, confirm] = useConfirm();
 
-  if (error && !data) return <ErrorState title="Не удалось загрузить пользователя" error={error} onRetry={() => void reload()} />;
+  if (error && !data)
+    return <ErrorState title="Не удалось загрузить пользователя" error={error} onRetry={() => void reload()} />;
   if (loading || !data) return <DetailSkeleton />;
 
   const { user, sessions, logins } = data;
@@ -76,8 +88,8 @@ function UserDetail({
   async function run(key: string, action: () => Promise<unknown>, success: string, failure: string) {
     setBusy(key);
     const ok = await mutate(action, success, failure);
-    setBusy(null);
     await reload();
+    setBusy(null);
     if (ok) onChanged();
   }
 
@@ -89,13 +101,24 @@ function UserDetail({
       'Не удалось изменить доступ',
     );
 
-  const toggleAdmin = (on: boolean) =>
-    run(
+  const toggleAdmin = async (on: boolean) => {
+    if (
+      on &&
+      !(await confirm({
+        title: 'Сделать администратором?',
+        message: `${user.name} получит доступ ко всем сервисам с режимом «только админам». Админка останется только у владельца.`,
+        confirmLabel: 'Сделать админом',
+        danger: false,
+      }))
+    )
+      return;
+    await run(
       'admin',
       () => adminApi.setAdmin(user.id, on),
       on ? `${user.name} — администратор` : `${user.name} больше не администратор`,
       'Не удалось изменить права',
     );
+  };
 
   const toggleBlock = async () => {
     const blocking = !user.isBlocked;
@@ -122,22 +145,40 @@ function UserDetail({
     );
   };
 
+  const isSelf = currentUserId !== undefined && user.telegramId === currentUserId;
+
   const revokeAll = async () => {
     const ok = await confirm({
-      title: 'Отозвать все сессии?',
-      message: `${user.name} выйдет на всех устройствах (сервисы примут старый токен ещё до 10 минут).`,
+      title: isSelf ? 'Отозвать все свои сессии?' : 'Отозвать все сессии?',
+      message: isSelf
+        ? 'Это ваши сессии, включая текущую: вы выйдете из mvv42 на всех устройствах, в том числе здесь.'
+        : `${user.name} выйдет на всех устройствах (сервисы примут старый токен ещё до 10 минут).`,
       confirmLabel: 'Отозвать все',
     });
-    if (ok) await run('revoke-all', () => adminApi.revokeSessions(user.id), 'Все сессии отозваны', 'Не удалось отозвать сессии');
+    if (ok)
+      await run(
+        'revoke-all',
+        () => adminApi.revokeSessions(user.id),
+        'Все сессии отозваны',
+        'Не удалось отозвать сессии',
+      );
   };
 
   const revokeOne = async (sessionId: number, label: string) => {
     const ok = await confirm({
       title: 'Отозвать сессию?',
-      message: `Сессия «${label}» будет завершена.`,
+      message: isSelf
+        ? `Сессия «${label}» будет завершена. Если это текущая сессия — вы выйдете из mvv42 здесь.`
+        : `Сессия «${label}» будет завершена.`,
       confirmLabel: 'Отозвать',
     });
-    if (ok) await run(`session:${sessionId}`, () => adminApi.revokeSession(sessionId), 'Сессия отозвана', 'Не удалось отозвать сессию');
+    if (ok)
+      await run(
+        `session:${sessionId}`,
+        () => adminApi.revokeSession(sessionId),
+        'Сессия отозвана',
+        'Не удалось отозвать сессию',
+      );
   };
 
   return (
@@ -184,7 +225,11 @@ function UserDetail({
               </div>
             );
           })}
-          {apps.length === 0 && <Text size="sm" c="dimmed">Сервисов нет.</Text>}
+          {apps.length === 0 && (
+            <Text size="sm" c="dimmed">
+              Сервисов нет.
+            </Text>
+          )}
         </div>
       </Section>
 
@@ -238,8 +283,8 @@ function UserDetail({
                       {label}
                     </div>
                     <div className={classes.rowSub}>
-                      <span className={classes.mono}>{s.ip ?? 'IP неизвестен'}</span> · вход {formatDateTime(s.createdAt)} ·
-                      активность {formatRelative(s.lastUsedAt, 'не было')}
+                      <span className={classes.mono}>{s.ip ?? 'IP неизвестен'}</span> · вход{' '}
+                      {formatDateTime(s.createdAt)} · активность {formatRelative(s.lastUsedAt, 'не было')}
                     </div>
                   </div>
                   <Tooltip label="Отозвать сессию">
@@ -261,7 +306,11 @@ function UserDetail({
         )}
       </Section>
 
-      <Section variant="plain" title="Последние входы" description={logins.length ? 'До 50 последних попыток' : undefined}>
+      <Section
+        variant="plain"
+        title="Последние входы"
+        description={logins.length ? 'До 50 последних попыток' : undefined}
+      >
         {logins.length === 0 ? (
           <EmptyState compact title="Входов не было" />
         ) : (
@@ -274,7 +323,9 @@ function UserDetail({
                     <span className={classes.mono}>{l.ip ?? '—'}</span> · {describeUserAgent(l.userAgent)}
                   </div>
                 </div>
-                <Badge color={LOGIN_RESULT[l.result]?.color ?? 'gray'}>{LOGIN_RESULT[l.result]?.label ?? l.result}</Badge>
+                <Badge color={LOGIN_RESULT[l.result]?.color ?? 'gray'}>
+                  {LOGIN_RESULT[l.result]?.label ?? l.result}
+                </Badge>
               </div>
             ))}
           </div>
@@ -295,7 +346,9 @@ function UserDetail({
         <Button
           color="red"
           variant={user.isBlocked ? 'default' : 'filled'}
-          leftSection={user.isBlocked ? <IconLockOpen size={16} /> : user.isOwner ? <IconLock size={16} /> : <IconBan size={16} />}
+          leftSection={
+            user.isBlocked ? <IconLockOpen size={16} /> : user.isOwner ? <IconLock size={16} /> : <IconBan size={16} />
+          }
           disabled={user.isOwner || (busy !== null && busy !== 'block')}
           loading={busy === 'block'}
           onClick={() => void toggleBlock()}
@@ -323,4 +376,3 @@ function DetailSkeleton() {
     </Stack>
   );
 }
-

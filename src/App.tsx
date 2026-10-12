@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useComputedColorScheme } from '@mantine/core';
 import { useRegistry } from './useRegistry';
 import { useAuth, isAppLocked, type AuthSnapshot } from './auth/useAuth';
@@ -15,12 +15,10 @@ import type { AuthRequiredMessage, NavigateMessage } from './shell/messages';
 import { decideAuthRequired } from './shell/authRequired';
 import { NO_ACCESS_NOTICE, showNotice } from './shell/notice';
 import type { Service } from './types';
+import { AdminRoute } from './admin/AdminRoute';
 import { ADMIN_ENTRY, ADMIN_ID, adminHash, parseAdminTab, type AdminTab } from './admin/route';
 import { useInviteFlow } from './invite/useInviteFlow';
 import classes from './App.module.css';
-
-// The owner console is a separate chunk: nobody else ever downloads it.
-const AdminRoute = lazy(() => import('./admin/AdminRoute').then((m) => ({ default: m.AdminRoute })));
 
 const THEME_COLOR = { light: '#fafafa', dark: '#0b0b0c' } as const;
 
@@ -128,6 +126,8 @@ export default function App() {
   const [afterLogin, setAfterLogin] = useState<Service | null>(null);
   /** Subtitle of the login modal when sign-in is asked for a reason (an invite). */
   const [loginMessage, setLoginMessage] = useState<string | undefined>(undefined);
+  /** Who opened the modal: closing it drops a pending invite only if the invite flow asked for sign-in. */
+  const [loginReason, setLoginReason] = useState<'invite' | null>(null);
 
   const authAvailable = auth.status === 'anonymous' || auth.status === 'authenticated';
   // `?login=1` opens the modal as soon as we know the visitor is signed out.
@@ -146,11 +146,20 @@ export default function App() {
     }
   }, [auth.status, loginRequest]);
 
-  const openLogin = useCallback((then: Service | null = null, message?: string) => {
+  const openLogin = useCallback((then: Service | null = null, message?: string, reason: 'invite' | null = null) => {
     setAfterLogin(then);
     setLoginMessage(message);
+    setLoginReason(reason);
     setLoginOpen(true);
   }, []);
+
+  /** An admin request answered 401/403: re-read /me — signed out → sign-in modal, no longer owner → 404 view. */
+  const authRefresh = auth.refresh;
+  const onAdminAuthLost = useCallback(() => {
+    void authRefresh().then((next) => {
+      if (next.status === 'anonymous') openLogin();
+    });
+  }, [authRefresh, openLogin]);
 
   // ----- Invite links (`?invite=CODE`, spec §10.10) -----
 
@@ -158,7 +167,7 @@ export default function App() {
     authStatus: auth.status,
     ready: !loading,
     services,
-    requestLogin: (message) => openLogin(null, message),
+    requestLogin: (message) => openLogin(null, message, 'invite'),
     applyMe: auth.apply,
     refreshAuth: auth.refresh,
     onAuthChanged: () => frameRef.current?.post({ type: 'AUTH_CHANGED' }),
@@ -170,9 +179,10 @@ export default function App() {
     setLoginDismissed(true);
     setAfterLogin(null);
     setLoginMessage(undefined);
+    setLoginReason(null);
     clearLoginParams();
-    invite.cancel();
-  }, [invite]);
+    if (loginReason === 'invite') invite.cancel();
+  }, [invite, loginReason]);
 
   const handleTelegramAuth = useCallback(
     async (data: TelegramAuthData) => {
@@ -310,16 +320,15 @@ export default function App() {
   let content;
   if (adminTab !== null) {
     content = (
-      <Suspense fallback={<div className={classes.status} aria-busy="true" />}>
-        <AdminRoute
-          authStatus={auth.status}
-          user={auth.user}
-          tab={adminTab}
-          onTabChange={changeAdminTab}
-          services={services}
-          onHome={() => select(null)}
-        />
-      </Suspense>
+      <AdminRoute
+        authStatus={auth.status}
+        user={auth.user}
+        tab={adminTab}
+        onTabChange={changeAdminTab}
+        services={services}
+        onHome={() => select(null)}
+        onAuthLost={onAdminAuthLost}
+      />
     );
   } else if (loading) {
     content = <div className={classes.status} aria-busy="true" />;

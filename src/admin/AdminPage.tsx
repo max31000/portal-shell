@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Tabs } from '@mantine/core';
 import { Page } from '@mvv42/kit';
 import { IconAddressBook, IconApps, IconHistory, IconLayoutDashboard, IconTicket } from '@tabler/icons-react';
@@ -7,6 +8,7 @@ import { InvitesTab } from './InvitesTab';
 import { LoginsTab } from './LoginsTab';
 import { OverviewTab } from './OverviewTab';
 import { UsersTab } from './UsersTab';
+import { onAdminAuthLost } from './api';
 import { isAdminTab, type AdminTab } from './route';
 import classes from './Admin.module.css';
 
@@ -17,6 +19,8 @@ interface AdminPageProps {
   services: Service[];
   /** Telegram id of the signed-in owner (marks «вы» in lists). */
   currentUserId?: number;
+  /** An admin call answered 401/403: re-read `/me` (the route then shows sign-in or 404). */
+  onAuthLost?: () => void;
 }
 
 const TABS: { value: AdminTab; label: string; Icon: typeof IconApps }[] = [
@@ -28,7 +32,9 @@ const TABS: { value: AdminTab; label: string; Icon: typeof IconApps }[] = [
 ];
 
 /** Owner console (spec §3.2): Mantine Tabs over the admin API; the shell has no router. */
-export function AdminPage({ tab, onTabChange, services, currentUserId }: AdminPageProps) {
+export function AdminPage({ tab, onTabChange, services, currentUserId, onAuthLost }: AdminPageProps) {
+  useEffect(() => (onAuthLost ? onAdminAuthLost(onAuthLost) : undefined), [onAuthLost]);
+
   return (
     <div className={classes.scroll}>
       <Page

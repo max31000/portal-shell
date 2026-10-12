@@ -193,6 +193,7 @@ export function UsersTab({ services, currentUserId }: UsersTabProps) {
         userId={openId}
         apps={apps}
         services={services}
+        currentUserId={currentUserId}
         onClose={() => setOpenId(null)}
         onChanged={() => void reload()}
       />

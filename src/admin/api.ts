@@ -4,7 +4,29 @@
  * on 401, `ApiError { status, code }` on non-2xx, `undefined` for 204). Unsafe methods are same-origin
  * `fetch`es, so the browser adds the `Origin` header the auth CSRF check requires.
  */
-import { apiJson } from '@mvv42/kit/platform';
+import { apiJson as kitApiJson, isApiError } from '@mvv42/kit/platform';
+
+let authLostHandler: (() => void) | null = null;
+
+/**
+ * Called when an admin request ends in 401 (session gone after the kit's refresh) or 403 (no longer the owner):
+ * the shell re-reads `/me`, so the route falls back to the sign-in modal / 404. Returns an unsubscribe.
+ */
+export function onAdminAuthLost(handler: () => void): () => void {
+  authLostHandler = handler;
+  return () => {
+    if (authLostHandler === handler) authLostHandler = null;
+  };
+}
+
+async function apiJson<T>(input: string, init?: RequestInit): Promise<T> {
+  try {
+    return await kitApiJson<T>(input, init);
+  } catch (error) {
+    if (isApiError(error) && (error.status === 401 || error.status === 403)) authLostHandler?.();
+    throw error;
+  }
+}
 
 export const ADMIN_API = '/auth/api/admin';
 

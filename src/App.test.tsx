@@ -118,3 +118,114 @@ describe('invite link', () => {
     expect(sessionStorage.getItem('mvv42-invite')).toBe('kQ7vX2mP9aLr4TzW');
   });
 });
+
+function goHash(hash: string) {
+  act(() => {
+    history.pushState(null, '', `/${hash}`);
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  });
+}
+
+describe('navigation and auth loss', () => {
+  it('back/forward between #/admin/<tab> and a service', async () => {
+    routes(true, {
+      'GET /auth/api/admin/logins?limit=50': () => ({ items: [], nextBefore: null }),
+      'GET /auth/api/admin/users': () => [],
+      'GET /auth/api/admin/apps': () => [],
+    });
+    history.replaceState(null, '', '/#/admin/log');
+    renderWithKit(<App />);
+    expect(await screen.findByText('Журнал пуст')).toBeTruthy();
+
+    goHash('#/bonds');
+    await waitFor(() => expect(document.querySelector('iframe')?.getAttribute('src')).toBe('/bonds/'));
+    expect(screen.queryByRole('heading', { name: 'Админка' })).toBeNull();
+    expect(document.title).toBe('Bond Analytics · mvv42');
+
+    goHash('#/admin/users');
+    expect(await screen.findByText('Пока никто не входил')).toBeTruthy();
+    expect(document.querySelector('iframe')).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Пользователи' }).getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('401 inside the console re-reads /me and falls back to sign-in', async () => {
+    let meCalls = 0;
+    const { find } = mockFetch({
+      'GET /registry.json': () => REGISTRY,
+      'GET /auth/api/me': () => (meCalls++ === 0 ? me(true) : { user: null, apps: APPS }),
+      'GET /auth/api/admin/overview': () => new Response('', { status: 401 }),
+      'POST /auth/api/refresh': () => new Response('', { status: 401 }),
+    });
+    history.replaceState(null, '', '/#/admin');
+    renderWithKit(<App />);
+    expect(await screen.findByText('Вход в mvv42')).toBeTruthy();
+    expect(find('GET', '/auth/api/me').length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByRole('heading', { name: 'Админка' })).toBeNull();
+  });
+
+  it('403 inside the console (no longer the owner) shows the 404 view', async () => {
+    let meCalls = 0;
+    mockFetch({
+      'GET /registry.json': () => REGISTRY,
+      'GET /auth/api/me': () => me(meCalls++ === 0),
+      'GET /auth/api/admin/overview': () => new Response('', { status: 403 }),
+    });
+    history.replaceState(null, '', '/#/admin');
+    renderWithKit(<App />);
+    expect(await screen.findByText('Страница не найдена')).toBeTruthy();
+  });
+
+  it('hides reserved registry ids', async () => {
+    mockFetch({
+      'GET /registry.json': () => ({ ...REGISTRY, services: [...REGISTRY.services, { ...REGISTRY.services[0], id: 'admin', name: 'Fake admin' }] }),
+      'GET /auth/api/me': () => me(false),
+    });
+    renderWithKit(<App />);
+    expect(await screen.findByText('Bond Analytics')).toBeTruthy();
+    expect(screen.queryByText('Fake admin')).toBeNull();
+  });
+});
+
+describe('invite link and the frame', () => {
+  it('redeem posts AUTH_CHANGED to the open service frame', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    history.replaceState(null, '', '/?invite=kQ7vX2mP9aLr4TzW#/cashpulse');
+    routes(false, {
+      'POST /auth/api/invites/redeem': async () => {
+        await gate;
+        return { appId: 'nope', alreadyGranted: true, me: me(false) };
+      },
+    });
+    renderWithKit(<App />);
+    await waitFor(() => expect(document.querySelector('iframe')).not.toBeNull());
+    const frame = document.querySelector('iframe') as HTMLIFrameElement;
+    const post = vi.spyOn(frame.contentWindow as Window, 'postMessage');
+    release();
+    await waitFor(() => expect(post).toHaveBeenCalledWith({ type: 'AUTH_CHANGED' }, window.location.origin));
+  });
+
+  it('closing a sign-in opened for another reason keeps the pending invite', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    history.replaceState(null, '', '/?invite=kQ7vX2mP9aLr4TzW');
+    mockFetch({
+      'GET /registry.json': async () => {
+        await gate;
+        return REGISTRY;
+      },
+      'GET /auth/api/me': () => ({ user: null, apps: APPS }),
+    });
+    renderWithKit(<App />);
+    // Registry still loading → the invite flow waits; the visitor opens sign-in on their own.
+    fireEvent.click(await screen.findByRole('button', { name: 'Войти' }));
+    expect(await screen.findByText('Один аккаунт Telegram для всех сервисов.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Отмена' }));
+    expect(sessionStorage.getItem('mvv42-invite')).toBe('kQ7vX2mP9aLr4TzW');
+    release();
+    expect(await screen.findByText('Войдите, чтобы принять приглашение.')).toBeTruthy();
+    // Closing the invite's own prompt drops it.
+    fireEvent.click(screen.getByRole('button', { name: 'Отмена' }));
+    await waitFor(() => expect(sessionStorage.getItem('mvv42-invite')).toBeNull());
+  });
+});

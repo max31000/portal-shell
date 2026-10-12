@@ -136,7 +136,7 @@ describe('overview', () => {
   it('renders metrics and services for the owner', async () => {
     mockFetch({ 'GET /auth/api/admin/overview': () => OVERVIEW });
     renderWithKit(<Harness />);
-    expect(screen.getByRole('heading', { name: 'Админка' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Админка' })).toBeTruthy();
     expect(await screen.findByText('17')).toBeTruthy();
     expect(screen.getByText('1 заблокирован')).toBeTruthy();
     expect(screen.getAllByText('Bond Analytics').length).toBeGreaterThan(0);
@@ -329,6 +329,13 @@ describe('invites', () => {
     expect(link.textContent).toBe(`${window.location.origin}/?invite=kQ7vX2mP9aLr4TzW`);
     expect(screen.getByText('Ссылка показывается один раз')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Копировать' })).toBeTruthy();
+    // Not dismissible by Escape / outside click / a close button while the link is shown.
+    const created = screen.getByRole('dialog', { name: 'Инвайт создан' });
+    fireEvent.keyDown(created, { key: 'Escape' });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.getByRole('dialog', { name: 'Инвайт создан' })).toBeTruthy();
+    expect(within(created).queryByRole('button', { name: /close|закрыть/i })).toBeNull();
+    expect(screen.getByTestId('invite-link')).toBeTruthy();
     // Closing forgets the code; reopening starts a fresh form.
     fireEvent.click(screen.getByRole('button', { name: 'Готово' }));
     fireEvent.click(screen.getByRole('button', { name: 'Создать инвайт' }));
@@ -384,7 +391,7 @@ describe('tabs', () => {
       'GET /auth/api/admin/logins?limit=50': () => ({ items: [], nextBefore: null }),
     });
     renderWithKit(<Harness />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Журнал' }));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Журнал' }));
     expect(await screen.findByText('Журнал пуст')).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Журнал' }).getAttribute('aria-selected')).toBe('true');
   });
