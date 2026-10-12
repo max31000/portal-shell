@@ -28,6 +28,17 @@ const APPS = [
   { id: 'cashpulse', name: 'CashPulse', anonymous: false, access: 'invite' },
 ];
 
+/**
+ * Finds an open Mantine modal by its title. `findByRole('dialog', { name })` computes accessible
+ * names for the whole tree on every poll and times out on slow CI runners; a text lookup is cheap.
+ */
+async function findDialog(title: string): Promise<HTMLElement> {
+  const heading = await screen.findByText(title, {}, { timeout: 10000 });
+  const dialog = heading.closest<HTMLElement>('[role="dialog"]');
+  if (!dialog) throw new Error(`"${title}" is not inside a dialog`);
+  return dialog;
+}
+
 function adminUser(over: Record<string, unknown>) {
   return {
     id: 2,
@@ -343,7 +354,7 @@ describe('invites', () => {
     });
     renderWithKit(<Harness initial="invites" />);
     fireEvent.click(await screen.findByRole('button', { name: 'Создать инвайт' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Новый инвайт' }, { timeout: 5000 });
+    const dialog = await findDialog('Новый инвайт');
     fireEvent.click(within(dialog).getAllByLabelText('Сервис')[0]);
     fireEvent.click(await screen.findByRole('option', { name: 'Только вход' }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Создать' }));
@@ -399,7 +410,7 @@ describe('invites', () => {
     });
     renderWithKit(<Harness initial="invites" />);
     fireEvent.click(await screen.findByRole('button', { name: 'Создать инвайт' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Новый инвайт' }, { timeout: 5000 });
+    const dialog = await findDialog('Новый инвайт');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Создать' }));
     await waitFor(() => expect(find('POST', '/auth/api/admin/invites')).toHaveLength(1));
     // Defaults: the invite-mode app, 1 use, 7 days.
@@ -421,7 +432,7 @@ describe('invites', () => {
     // Closing forgets the code; reopening starts a fresh form.
     fireEvent.click(screen.getByRole('button', { name: 'Готово' }));
     fireEvent.click(screen.getByRole('button', { name: 'Создать инвайт' }));
-    await screen.findByRole('dialog', { name: 'Новый инвайт' });
+    await findDialog('Новый инвайт');
     expect(screen.queryByTestId('invite-link')).toBeNull();
     expect(find('GET', '/auth/api/admin/invites').length).toBeGreaterThanOrEqual(2);
   });
