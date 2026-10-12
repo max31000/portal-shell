@@ -37,10 +37,13 @@ export class AuthUnavailableError extends Error {
 
 export class AuthRequestError extends Error {
   readonly status: number;
-  constructor(status: number, message: string) {
+  /** `{ "error": "<code>" }` from the body (e.g. `invite_required`, `Replayed`), null if there was none. */
+  readonly code: string | null;
+  constructor(status: number, message: string, code: string | null = null) {
     super(message);
     this.name = 'AuthRequestError';
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -130,24 +133,58 @@ export async function getMe(signal?: AbortSignal): Promise<MeResponse> {
   return me;
 }
 
-async function post(path: string, body?: unknown, signal?: AbortSignal): Promise<Response> {
+async function post(
+  path: string,
+  body?: unknown,
+  signal?: AbortSignal,
+  extraHeaders: Record<string, string> = {},
+): Promise<Response> {
+  const headers: Record<string, string> =
+    body === undefined ? { Accept: 'application/json' } : { 'Content-Type': 'application/json', Accept: 'application/json' };
   return fetch(`${AUTH_API}${path}`, {
     method: 'POST',
     credentials: 'same-origin',
     signal,
-    headers: body === undefined ? { Accept: 'application/json' } : { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: { ...headers, ...extraHeaders },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
 
-/** POST /auth/api/telegram with the raw widget object. Returns the fresh `{user, apps}`. */
-export async function loginTelegram(data: TelegramAuthData): Promise<MeResponse> {
-  const res = await post('/telegram', data);
-  if (!res.ok) throw new AuthRequestError(res.status, `Login failed (${res.status})`);
+/** Header carrying the invite code of a new user on `POST /telegram` (closed registration). */
+export const INVITE_HEADER = 'X-Invite-Code';
+
+export interface TelegramLogin {
+  me: MeResponse;
+  /**
+   * Present only when this login registered a new user with an invite code (`appId` null = login-only invite).
+   * Absent for known users — the code header is ignored for them.
+   */
+  invite: { appId: string | null } | null;
+}
+
+function parseLoginInvite(v: unknown): { appId: string | null } | null {
+  if (!isRecord(v)) return null;
+  if (v.appId === null || v.appId === undefined) return { appId: null };
+  return typeof v.appId === 'string' ? { appId: v.appId } : null;
+}
+
+/**
+ * POST /auth/api/telegram with the raw widget object (the HMAC covers only it) and, for a new user, the already
+ * normalised ASCII invite code in `X-Invite-Code`. Returns the fresh `{user, apps}` and the `invite` marker.
+ * Errors carry the server's `{error}` code (`invite_required`, `invite_*`, `Expired`, `Replayed`, `user_blocked`, …).
+ */
+export async function loginTelegram(data: TelegramAuthData, inviteCode?: string | null): Promise<TelegramLogin> {
+  // A header value must be ASCII; a non-ASCII code would make fetch throw — such codes never leave the client.
+  const extra = inviteCode && /^[!-~]+$/.test(inviteCode) ? { [INVITE_HEADER]: inviteCode } : undefined;
+  const res = await post('/telegram', data, undefined, extra);
   const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    const code = isRecord(body) && typeof body.error === 'string' ? body.error : null;
+    throw new AuthRequestError(res.status, `Login failed (${res.status})`, code);
+  }
   const me = parseMeResponse(body);
-  if (!me) throw new AuthRequestError(res.status, 'Unexpected login response');
-  return me;
+  if (!me || !isRecord(body)) throw new AuthRequestError(res.status, 'Unexpected login response');
+  return { me, invite: parseLoginInvite(body.invite) };
 }
 
 export async function logout(): Promise<void> {
@@ -199,7 +236,8 @@ export function refreshSession(): Promise<boolean> {
 }
 
 export interface RedeemResult {
-  appId: string;
+  /** null — a login-only invite (nothing to grant; always `alreadyGranted`). */
+  appId: string | null;
   /** The user could already use the app (grant, public app, admin): no use was spent. */
   alreadyGranted: boolean;
   /** Fresh `/me` (the access cookie was re-issued with the new grant). */
@@ -216,8 +254,8 @@ export async function redeemInvite(code: string): Promise<RedeemResult> {
     body: JSON.stringify({ code }),
   });
   const me = isRecord(body) ? parseMeResponse(body.me) : null;
-  if (!isRecord(body) || typeof body.appId !== 'string' || !me) {
+  if (!isRecord(body) || !(typeof body.appId === 'string' || body.appId === null) || !me) {
     throw new ApiError(200, 'unexpected_response', 'Unexpected redeem response');
   }
-  return { appId: body.appId, alreadyGranted: body.alreadyGranted === true, me };
+  return { appId: body.appId as string | null, alreadyGranted: body.alreadyGranted === true, me };
 }

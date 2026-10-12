@@ -64,6 +64,13 @@ describe('adminApi (contract addendum A)', () => {
       '/auth/api/admin/invites',
       { appId: 'bonds', maxUses: 5, expiresInHours: 24 },
     ],
+    [
+      'createInvite login-only',
+      () => adminApi.createInvite({ appId: null }),
+      'POST',
+      '/auth/api/admin/invites',
+      { appId: null, maxUses: 1, expiresInHours: 168 },
+    ],
     ['deleteInvite', () => adminApi.deleteInvite(7), 'DELETE', '/auth/api/admin/invites/7', undefined],
   ])('%s → %s %s', async (_name, call, method, path, body) => {
     const { calls } = mockFetch({ [`${method} ${path}`]: () => (method === 'GET' ? json([]) : noContent()) });

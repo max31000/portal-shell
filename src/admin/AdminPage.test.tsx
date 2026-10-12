@@ -135,6 +135,15 @@ describe('overview', () => {
     expect(await screen.findByText('17')).toBeTruthy();
     expect(screen.getByText('1 заблокирован')).toBeTruthy();
     expect(screen.getAllByText('Bond Analytics').length).toBeGreaterThan(0);
+    // An auth without closed registration has no `deniedUnregistered7d`: no such metric, no crash.
+    expect(screen.queryByText('Попыток входа без приглашения (7 дн.)')).toBeNull();
+  });
+
+  it('shows sign-in attempts refused for lack of an invite', async () => {
+    mockFetch({ 'GET /auth/api/admin/overview': () => ({ ...OVERVIEW, deniedUnregistered7d: 23 }) });
+    renderWithKit(<Harness />);
+    expect(await screen.findByText('Попыток входа без приглашения (7 дн.)')).toBeTruthy();
+    expect(await screen.findByText('23')).toBeTruthy();
   });
 
   it('shows an error state with retry', async () => {
@@ -291,6 +300,81 @@ describe('invites', () => {
     },
     { id: 3, appId: 'bonds', maxUses: 1, uses: 1, expiresAt: null, createdBy: null, createdAt: '2026-09-20T07:00:00Z', status: 'exhausted' },
   ];
+  const LOGIN_ONLY_INVITE = {
+    id: 9,
+    appId: null,
+    maxUses: 5,
+    uses: 2,
+    expiresAt: '2026-10-19T07:00:00Z',
+    createdBy: 1,
+    createdAt: '2026-10-12T08:00:00Z',
+    status: 'active',
+  };
+
+  it('lists a login-only invite (appId null) as «Только вход» and deletes it', async () => {
+    const { find } = mockFetch({
+      'GET /auth/api/admin/invites': () => [LOGIN_ONLY_INVITE, ...INVITES],
+      'GET /auth/api/admin/apps': () => APPS,
+      'DELETE /auth/api/admin/invites/9': () => noContent(),
+    });
+    renderWithKit(<Harness initial="invites" />);
+    expect(await screen.findByText('Только вход')).toBeTruthy();
+    expect(screen.getByText('2 / 5')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить инвайт #9' }));
+    const confirm = await screen.findByRole('dialog', { name: 'Удалить инвайт?' });
+    expect(within(confirm).getByText(/только вход/)).toBeTruthy();
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Удалить' }));
+    await waitFor(() => expect(find('DELETE', '/auth/api/admin/invites/9')).toHaveLength(1));
+  });
+
+  it('creates a login-only invite: appId null, code shown large with copy buttons', async () => {
+    // jsdom has no scrollIntoView; the Select dropdown scrolls to the selected option.
+    Element.prototype.scrollIntoView = vi.fn();
+    const { find } = mockFetch({
+      'GET /auth/api/admin/invites': () => INVITES,
+      'GET /auth/api/admin/apps': () => APPS,
+      'POST /auth/api/admin/invites': () => ({
+        id: 10,
+        code: 'K7PM-2XQ9-HD4T',
+        appId: null,
+        maxUses: 1,
+        expiresAt: '2026-10-19T08:00:00Z',
+      }),
+    });
+    renderWithKit(<Harness initial="invites" />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Создать инвайт' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Новый инвайт' }, { timeout: 5000 });
+    fireEvent.click(within(dialog).getAllByLabelText('Сервис')[0]);
+    fireEvent.click(await screen.findByRole('option', { name: 'Только вход' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Создать' }));
+    await waitFor(() => expect(find('POST', '/auth/api/admin/invites')).toHaveLength(1));
+    expect(find('POST', '/auth/api/admin/invites')[0].body).toEqual({ appId: null, maxUses: 1, expiresInHours: 168 });
+    expect((await screen.findByTestId('invite-code', {}, { timeout: 5000 })).textContent).toBe('K7PM-2XQ9-HD4T');
+    expect(screen.getByTestId('invite-link').textContent).toBe(`${window.location.origin}/?invite=K7PM-2XQ9-HD4T`);
+    expect(screen.getByRole('button', { name: 'Копировать код' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Копировать ссылку' })).toBeTruthy();
+    expect(screen.getByText(/Только вход · одно использование/)).toBeTruthy();
+  });
+
+  it('phones: stacked rows instead of the table, delete still works', async () => {
+    stubDom(true); // every media query matches → compact layout
+    mockFetch({ 'GET /auth/api/admin/invites': () => [LOGIN_ONLY_INVITE, ...INVITES], 'GET /auth/api/admin/apps': () => APPS });
+    renderWithKit(<Harness initial="invites" />);
+    const row = await screen.findByTestId('invite-row-9');
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(within(row).getByText('Только вход')).toBeTruthy();
+    expect(within(row).getByText('Активен')).toBeTruthy();
+    expect(within(row).getByText(/2 \/ 5 · до/)).toBeTruthy();
+    expect(within(screen.getByTestId('invite-row-3')).getByText(/1 \/ 1 · бессрочно/)).toBeTruthy();
+    expect(within(row).getByRole('button', { name: 'Удалить инвайт #9' })).toBeTruthy();
+  });
+
+  it('can create an invite when no services exist (login-only)', async () => {
+    mockFetch({ 'GET /auth/api/admin/invites': () => [], 'GET /auth/api/admin/apps': () => [] });
+    renderWithKit(<Harness initial="invites" />);
+    const button = await screen.findByRole('button', { name: 'Создать инвайт' });
+    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+  });
 
   it('lists invites with status and handles a non-expiring one', async () => {
     mockFetch({ 'GET /auth/api/admin/invites': () => INVITES, 'GET /auth/api/admin/apps': () => APPS });
@@ -322,8 +406,11 @@ describe('invites', () => {
     expect(find('POST', '/auth/api/admin/invites')[0].body).toEqual({ appId: 'cashpulse', maxUses: 1, expiresInHours: 168 });
     const link = await screen.findByTestId('invite-link', {}, { timeout: 5000 });
     expect(link.textContent).toBe(`${window.location.origin}/?invite=kQ7vX2mP9aLr4TzW`);
-    expect(screen.getByText('Ссылка показывается один раз')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Копировать' })).toBeTruthy();
+    expect(screen.getByText('Код показывается один раз')).toBeTruthy();
+    // A legacy-format code is shown as is.
+    expect(screen.getByTestId('invite-code').textContent).toBe('kQ7vX2mP9aLr4TzW');
+    expect(screen.getByRole('button', { name: 'Копировать код' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Копировать ссылку' })).toBeTruthy();
     // Not dismissible by Escape / outside click / a close button while the link is shown.
     const created = screen.getByRole('dialog', { name: 'Инвайт создан' });
     fireEvent.keyDown(created, { key: 'Escape' });

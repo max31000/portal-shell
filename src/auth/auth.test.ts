@@ -85,9 +85,45 @@ describe('parseMeResponse (backend shape)', () => {
 describe('loginTelegram', () => {
   it('parses the backend /telegram body (same as /me)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(BACKEND_ME_AUTHED)));
-    const me = await loginTelegram({ id: 123456789, first_name: 'Max', auth_date: 1, hash: 'h' });
+    const { me, invite } = await loginTelegram({ id: 123456789, first_name: 'Max', auth_date: 1, hash: 'h' });
     expect(me.user?.id).toBe(7);
     expect(me.user?.telegramId).toBe(123456789);
+    expect(invite).toBeNull();
+  });
+
+  it('sends the invite code in X-Invite-Code and reads the `invite` marker', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ...BACKEND_ME_AUTHED, invite: { appId: null } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const widget = { id: 1, first_name: 'A', auth_date: 1, hash: 'h' };
+    const { invite } = await loginTelegram(widget, 'ABCD2345EFGH');
+    expect(invite).toEqual({ appId: null });
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(new Headers(init.headers).get('X-Invite-Code')).toBe('ABCD2345EFGH');
+    expect(JSON.parse(init.body as string)).toEqual(widget);
+  });
+
+  it('never sends a non-ASCII header and omits it without a code', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(BACKEND_ME_AUTHED));
+    vi.stubGlobal('fetch', fetchMock);
+    await loginTelegram({ id: 1, first_name: 'A', auth_date: 1, hash: 'h' }, 'КОД');
+    await loginTelegram({ id: 1, first_name: 'A', auth_date: 1, hash: 'h' });
+    for (const call of fetchMock.mock.calls as unknown[][]) expect(new Headers((call[1] as RequestInit).headers).has('X-Invite-Code')).toBe(false);
+  });
+
+  it('429 with an empty body: status kept, no code', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 429 })));
+    await expect(loginTelegram({ id: 1, first_name: 'A', auth_date: 1, hash: 'h' })).rejects.toMatchObject({
+      status: 429,
+      code: null,
+    });
+  });
+
+  it('carries the `{error}` code of a failed login', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'invite_required' }, 403)));
+    await expect(loginTelegram({ id: 1, first_name: 'A', auth_date: 1, hash: 'h' })).rejects.toMatchObject({
+      status: 403,
+      code: 'invite_required',
+    });
   });
 });
 

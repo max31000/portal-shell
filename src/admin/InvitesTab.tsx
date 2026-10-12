@@ -20,7 +20,8 @@ import { IconCheck, IconCopy, IconPlus, IconTicket, IconTrash } from '@tabler/ic
 import type { Service } from '../types';
 import { adminApi, inviteLink, type AdminApp, type AdminInvite, type CreatedInvite } from './api';
 import { AppLabel } from './AppLabel';
-import { INVITE_STATUS, formatDate, formatDateTime } from './format';
+import { INVITE_STATUS, LOGIN_ONLY_LABEL, formatDate, formatDateTime } from './format';
+import { formatInviteCode } from '../invite/code';
 import { mutate, notifyError, useConfirm } from './feedback';
 import { useResource } from './useResource';
 import classes from './Admin.module.css';
@@ -41,6 +42,7 @@ async function loadInvites() {
 
 export function InvitesTab({ services }: { services: Service[] }) {
   const { data, error, loading, reload } = useResource(loadInvites);
+  const compact = useMediaQuery('(max-width: 640px)');
   const [createOpen, setCreateOpen] = useState(false);
   const [busy, setBusy] = useState<number | null>(null);
   const [dialog, confirm] = useConfirm();
@@ -49,12 +51,15 @@ export function InvitesTab({ services }: { services: Service[] }) {
 
   const apps = data?.apps ?? [];
   const invites = data?.invites ?? [];
-  const appName = (id: string) => apps.find((a) => a.id === id)?.name ?? id;
+  const appName = (id: string | null) => (id === null ? LOGIN_ONLY_LABEL : (apps.find((a) => a.id === id)?.name ?? id));
 
   async function remove(invite: AdminInvite) {
     const ok = await confirm({
       title: 'Удалить инвайт?',
-      message: `Ссылка на «${appName(invite.appId)}» перестанет работать. Уже выданные гранты останутся.`,
+      message:
+        invite.appId === null
+          ? 'Код «только вход» перестанет работать. Уже зарегистрированные по нему пользователи останутся.'
+          : `Код и ссылка на «${appName(invite.appId)}» перестанут работать. Уже выданные гранты останутся.`,
       confirmLabel: 'Удалить',
     });
     if (!ok) return;
@@ -65,7 +70,7 @@ export function InvitesTab({ services }: { services: Service[] }) {
   }
 
   const createButton = (
-    <Button leftSection={<IconPlus size={16} />} onClick={() => setCreateOpen(true)} disabled={!data || apps.length === 0}>
+    <Button leftSection={<IconPlus size={16} />} onClick={() => setCreateOpen(true)} disabled={!data}>
       Создать инвайт
     </Button>
   );
@@ -75,7 +80,7 @@ export function InvitesTab({ services }: { services: Service[] }) {
       {dialog}
       <Section
         title="Инвайты"
-        description="Ссылка-приглашение выдаёт грант на сервис тому, кто по ней войдёт."
+        description="Регистрация закрыта: новый человек входит только с кодом. Если выбран сервис, код ещё и открывает к нему доступ."
         padding="none"
         actions={createButton}
       >
@@ -89,8 +94,39 @@ export function InvitesTab({ services }: { services: Service[] }) {
           <EmptyState
             icon={<IconTicket />}
             title="Инвайтов нет"
-            description="Создайте приглашение, чтобы открыть сервис с режимом «по приглашению» новому человеку."
+            description="Создайте код, чтобы пустить нового человека на платформу или открыть ему сервис."
           />
+        ) : (
+          compact ? (
+          // Phones: stacked rows (service + status on top, usage and dates below) — no horizontal scroll.
+          <ul className={classes.list}>
+            {invites.map((inv) => (
+              <li key={inv.id} className={`${classes.listItem} ${classes.listRow}`} data-testid={`invite-row-${inv.id}`}>
+                <span className={classes.listMain}>
+                  <span className={classes.inviteRowTop}>
+                    <AppLabel appId={inv.appId} name={appName(inv.appId)} services={services} size={24} />
+                    <Badge color={INVITE_STATUS[inv.status]?.color ?? 'gray'} className={classes.noShrink}>
+                      {INVITE_STATUS[inv.status]?.label ?? inv.status}
+                    </Badge>
+                  </span>
+                  <span className={`${classes.rowSub} ${classes.inviteRowSub}`}>
+                    {inv.uses} / {inv.maxUses} · {inv.expiresAt ? `до ${formatDate(inv.expiresAt)}` : 'бессрочно'} · создан{' '}
+                    {formatDate(inv.createdAt)}
+                  </span>
+                </span>
+                <ActionIcon
+                  color="red"
+                  variant="subtle"
+                  aria-label={`Удалить инвайт #${inv.id}`}
+                  loading={busy === inv.id}
+                  disabled={busy !== null}
+                  onClick={() => void remove(inv)}
+                >
+                  <IconTrash size={16} />
+                </ActionIcon>
+              </li>
+            ))}
+          </ul>
         ) : (
           <Table className={classes.table}>
             <Table.Thead>
@@ -139,6 +175,7 @@ export function InvitesTab({ services }: { services: Service[] }) {
               ))}
             </Table.Tbody>
           </Table>
+        )
         )}
       </Section>
 
@@ -159,14 +196,34 @@ interface CreateInviteModalProps {
   onCreated: () => void;
 }
 
-function defaultApp(apps: AdminApp[]): string | null {
-  return (apps.find((a) => a.access === 'invite') ?? apps.find((a) => a.access === 'admin') ?? apps[0])?.id ?? null;
+/** Select value for «Только вход» (`appId: null`). */
+const LOGIN_ONLY = '__login_only__';
+
+function defaultApp(apps: AdminApp[]): string {
+  return (apps.find((a) => a.access === 'invite') ?? apps.find((a) => a.access === 'admin') ?? apps[0])?.id ?? LOGIN_ONLY;
 }
 
-/** Create → show the link once (the server keeps only a hash of the code). */
+function CopyAction({ value, label, primary = false }: { value: string; label: string; primary?: boolean }) {
+  return (
+    <CopyButton value={value} timeout={2000}>
+      {({ copied, copy }) => (
+        <Button
+          variant={copied ? 'light' : primary ? 'filled' : 'default'}
+          color={copied ? 'green' : undefined}
+          leftSection={copied ? <IconCheck size={16} /> : <IconCopy size={16} />}
+          onClick={copy}
+        >
+          {copied ? 'Скопировано' : label}
+        </Button>
+      )}
+    </CopyButton>
+  );
+}
+
+/** Create → show the code and link once (the server keeps only a hash of the code). */
 export function CreateInviteModal({ opened, apps, onClose, onCreated }: CreateInviteModalProps) {
   const compact = useMediaQuery('(max-width: 640px)');
-  const [appId, setAppId] = useState<string | null>(null);
+  const [appId, setAppId] = useState<string>(LOGIN_ONLY);
   const [maxUses, setMaxUses] = useState<number | string>(1);
   const [expiry, setExpiry] = useState<string>('168');
   const [saving, setSaving] = useState(false);
@@ -185,13 +242,13 @@ export function CreateInviteModal({ opened, apps, onClose, onCreated }: CreateIn
   }
 
   const uses = typeof maxUses === 'number' ? maxUses : Number.parseInt(maxUses, 10);
-  const valid = appId !== null && Number.isInteger(uses) && uses >= 1 && uses <= 1000;
+  const valid = Number.isInteger(uses) && uses >= 1 && uses <= 1000;
 
   async function submit() {
-    if (!valid || appId === null) return;
+    if (!valid) return;
     setSaving(true);
     try {
-      const result = await adminApi.createInvite({ appId, maxUses: uses, expiresInHours: Number(expiry) });
+      const result = await adminApi.createInvite({ appId: appId === LOGIN_ONLY ? null : appId, maxUses: uses, expiresInHours: Number(expiry) });
       setCreated(result);
       onCreated();
     } catch (e) {
@@ -202,7 +259,11 @@ export function CreateInviteModal({ opened, apps, onClose, onCreated }: CreateIn
   }
 
   const link = created ? inviteLink(created.code) : '';
-  const createdApp = created ? (apps.find((a) => a.id === created.appId)?.name ?? created.appId) : '';
+  const createdApp = !created
+    ? ''
+    : created.appId === null
+      ? LOGIN_ONLY_LABEL
+      : (apps.find((a) => a.id === created.appId)?.name ?? created.appId);
 
   return (
     <Modal
@@ -219,30 +280,26 @@ export function CreateInviteModal({ opened, apps, onClose, onCreated }: CreateIn
     >
       {created ? (
         <Stack gap="md">
-          <Alert color="orange" title="Ссылка показывается один раз">
-            Скопируйте её сейчас — сервер хранит только хеш кода, восстановить ссылку нельзя.
+          <Alert color="orange" title="Код показывается один раз">
+            Скопируйте код или ссылку сейчас — сервер хранит только хеш, восстановить их нельзя.
           </Alert>
+          <div className={classes.codeBox}>
+            <span className={classes.codeText} data-testid="invite-code">
+              {formatInviteCode(created.code)}
+            </span>
+            <span className={classes.rowSub}>
+              {createdApp} · {created.maxUses === 1 ? 'одно использование' : `до ${created.maxUses} использований`} · до{' '}
+              {formatDateTime(created.expiresAt)}
+            </span>
+          </div>
+          <div className={classes.codeActions}>
+            <CopyAction value={formatInviteCode(created.code)} label="Копировать код" primary />
+            <CopyAction value={link} label="Копировать ссылку" />
+          </div>
           <div className={classes.link}>
             <span className={classes.linkText} data-testid="invite-link">
               {link}
             </span>
-            <CopyButton value={link} timeout={2000}>
-              {({ copied, copy }) => (
-                <Button
-                  size="xs"
-                  variant={copied ? 'light' : 'default'}
-                  color={copied ? 'green' : undefined}
-                  leftSection={copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
-                  onClick={copy}
-                >
-                  {copied ? 'Скопировано' : 'Копировать'}
-                </Button>
-              )}
-            </CopyButton>
-          </div>
-          <div className={classes.rowSub}>
-            {createdApp} · {created.maxUses === 1 ? 'одно использование' : `до ${created.maxUses} использований`} · до{' '}
-            {formatDateTime(created.expiresAt)}
           </div>
           <Group justify="flex-end">
             <Button variant="default" onClick={onClose}>
@@ -260,11 +317,14 @@ export function CreateInviteModal({ opened, apps, onClose, onCreated }: CreateIn
           <Stack gap="md">
             <Select
               label="Сервис"
-              data={apps.map((a) => ({ value: a.id, label: a.name }))}
+              description="«Только вход» пускает на платформу; доступ к сервисам можно выдать позже."
+              data={[
+                { value: LOGIN_ONLY, label: LOGIN_ONLY_LABEL },
+                ...apps.map((a) => ({ value: a.id, label: a.name })),
+              ]}
               value={appId}
-              onChange={setAppId}
+              onChange={(v) => v && setAppId(v)}
               allowDeselect={false}
-              required
               comboboxProps={{ zIndex: 400 }}
             />
             <Group grow align="flex-start">
@@ -276,7 +336,7 @@ export function CreateInviteModal({ opened, apps, onClose, onCreated }: CreateIn
                 onChange={setMaxUses}
                 allowDecimal={false}
                 allowNegative={false}
-                error={valid || appId === null ? undefined : 'От 1 до 1000'}
+                error={valid ? undefined : 'От 1 до 1000'}
               />
               <Select
                 label="Действует"
