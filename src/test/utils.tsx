@@ -1,7 +1,7 @@
-import type { ReactElement } from 'react';
 import { vi } from 'vitest';
-import { render } from '@testing-library/react';
-import { Mvv42Provider } from '@mvv42/kit';
+
+/** `render` inside `Mvv42Provider` (test env) and the notification reset — from the kit. */
+export { renderWithKit, resetNotifications } from '@mvv42/kit/testing';
 
 /** jsdom lacks matchMedia / ResizeObserver; Mantine (and `useMediaQuery`) need them. */
 export function stubDom(matches = false) {
@@ -25,14 +25,6 @@ export function stubDom(matches = false) {
       unobserve() {}
       disconnect() {}
     },
-  );
-}
-
-export function renderWithKit(ui: ReactElement) {
-  return render(
-    <Mvv42Provider serviceId="portal" accent="zinc" insideShell={false} env="test">
-      {ui}
-    </Mvv42Provider>,
   );
 }
 

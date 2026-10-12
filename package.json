@@ -15,7 +15,7 @@
     "@mantine/core": "^9.7.2",
     "@mantine/hooks": "^9.7.2",
     "@mantine/notifications": "^9.7.2",
-    "@mvv42/kit": "https://github.com/max31000/mvv42-kit/releases/download/v0.1.1/mvv42-kit-0.1.1.tgz",
+    "@mvv42/kit": "https://github.com/max31000/mvv42-kit/releases/download/v0.1.2/mvv42-kit-0.1.2.tgz",
     "@tabler/icons-react": "^3.41.1",
     "postcss": "^8.5.8",
     "postcss-preset-mantine": "^1.18.0",

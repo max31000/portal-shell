@@ -1,8 +1,7 @@
 import { act, useState } from 'react';
-import { notifications } from '@mantine/notifications';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { json, mockFetch, noContent, renderWithKit, stubDom } from '../test/utils';
+import { json, mockFetch, noContent, renderWithKit, resetNotifications, stubDom } from '../test/utils';
 import type { AuthUser } from '../auth/api';
 import type { AuthStatus } from '../auth/useAuth';
 import type { Service } from '../types';
@@ -96,11 +95,7 @@ function Harness({
 
 beforeEach(() => stubDom());
 afterEach(() => {
-  // The notifications store is global; drop what earlier tests queued (limit 4).
-  act(() => {
-    notifications.clean();
-    notifications.cleanQueue();
-  });
+  act(() => resetNotifications());
   vi.unstubAllGlobals();
 });
 

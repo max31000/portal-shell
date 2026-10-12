@@ -14,7 +14,12 @@ if (!root) throw new Error('Root element not found');
 // a service, so the kit's shell bridge stays idle. Accent `zinc` = the neutral shell look.
 createRoot(root).render(
   <StrictMode>
-    <Mvv42Provider serviceId="portal" accent="zinc" insideShell={false}>
+    <Mvv42Provider
+      serviceId="portal"
+      accent="zinc"
+      insideShell={false}
+      notifications={{ position: 'top-center', limit: 3 }}
+    >
       <App />
     </Mvv42Provider>
   </StrictMode>,

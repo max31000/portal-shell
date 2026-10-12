@@ -29,19 +29,3 @@ button {
 ::selection {
   background: color-mix(in srgb, var(--mvv-text) 16%, transparent);
 }
-
-/* Zinc accent in dark = a near-white checked track; the kit's white thumb would vanish on it. */
-:root[data-mantine-color-scheme='dark'] input:checked + .mvv-switch-track .mvv-switch-thumb {
-  background: var(--mvv-bg);
-}
-
-/*
- * Kit v0.1.1 gap: with the zinc accent Mantine's autoContrast resolves a primary filled button's label from the
- * light shade (white) and inlines it as `--button-color`, but in dark the fill is zinc-0 (near white). Use the
- * scheme-aware primary contrast instead (only for primary-coloured buttons — explicit colours set `--button-bg`).
- */
-:root[data-mantine-color-scheme='dark'] .mantine-Button-root:is([data-variant='filled'], :not([data-variant])):not([style*='--button-bg']),
-:root[data-mantine-color-scheme='dark'] .mantine-ActionIcon-root[data-variant='filled']:not([style*='--ai-bg']) {
-  --button-color: var(--mantine-primary-color-contrast) !important;
-  --ai-color: var(--mantine-primary-color-contrast) !important;
-}

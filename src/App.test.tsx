@@ -1,8 +1,7 @@
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { notifications } from '@mantine/notifications';
-import { mockFetch, renderWithKit, stubDom } from './test/utils';
+import { mockFetch, renderWithKit, resetNotifications, stubDom } from './test/utils';
 import App from './App';
 
 const REGISTRY = {
@@ -39,10 +38,7 @@ beforeEach(() => {
   history.replaceState(null, '', '/');
 });
 afterEach(() => {
-  act(() => {
-    notifications.clean();
-    notifications.cleanQueue();
-  });
+  act(() => resetNotifications());
   vi.unstubAllGlobals();
 });
 
