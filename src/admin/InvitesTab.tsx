@@ -42,6 +42,7 @@ async function loadInvites() {
 
 export function InvitesTab({ services }: { services: Service[] }) {
   const { data, error, loading, reload } = useResource(loadInvites);
+  const compact = useMediaQuery('(max-width: 640px)');
   const [createOpen, setCreateOpen] = useState(false);
   const [busy, setBusy] = useState<number | null>(null);
   const [dialog, confirm] = useConfirm();
@@ -96,6 +97,37 @@ export function InvitesTab({ services }: { services: Service[] }) {
             description="Создайте код, чтобы пустить нового человека на платформу или открыть ему сервис."
           />
         ) : (
+          compact ? (
+          // Phones: stacked rows (service + status on top, usage and dates below) — no horizontal scroll.
+          <ul className={classes.list}>
+            {invites.map((inv) => (
+              <li key={inv.id} className={`${classes.listItem} ${classes.listRow}`} data-testid={`invite-row-${inv.id}`}>
+                <span className={classes.listMain}>
+                  <span className={classes.inviteRowTop}>
+                    <AppLabel appId={inv.appId} name={appName(inv.appId)} services={services} size={24} />
+                    <Badge color={INVITE_STATUS[inv.status]?.color ?? 'gray'} className={classes.noShrink}>
+                      {INVITE_STATUS[inv.status]?.label ?? inv.status}
+                    </Badge>
+                  </span>
+                  <span className={`${classes.rowSub} ${classes.inviteRowSub}`}>
+                    {inv.uses} / {inv.maxUses} · {inv.expiresAt ? `до ${formatDate(inv.expiresAt)}` : 'бессрочно'} · создан{' '}
+                    {formatDate(inv.createdAt)}
+                  </span>
+                </span>
+                <ActionIcon
+                  color="red"
+                  variant="subtle"
+                  aria-label={`Удалить инвайт #${inv.id}`}
+                  loading={busy === inv.id}
+                  disabled={busy !== null}
+                  onClick={() => void remove(inv)}
+                >
+                  <IconTrash size={16} />
+                </ActionIcon>
+              </li>
+            ))}
+          </ul>
+        ) : (
           <Table className={classes.table}>
             <Table.Thead>
               <Table.Tr>
@@ -143,6 +175,7 @@ export function InvitesTab({ services }: { services: Service[] }) {
               ))}
             </Table.Tbody>
           </Table>
+        )
         )}
       </Section>
 

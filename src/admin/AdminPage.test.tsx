@@ -356,6 +356,19 @@ describe('invites', () => {
     expect(screen.getByText(/Только вход · одно использование/)).toBeTruthy();
   });
 
+  it('phones: stacked rows instead of the table, delete still works', async () => {
+    stubDom(true); // every media query matches → compact layout
+    mockFetch({ 'GET /auth/api/admin/invites': () => [LOGIN_ONLY_INVITE, ...INVITES], 'GET /auth/api/admin/apps': () => APPS });
+    renderWithKit(<Harness initial="invites" />);
+    const row = await screen.findByTestId('invite-row-9');
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(within(row).getByText('Только вход')).toBeTruthy();
+    expect(within(row).getByText('Активен')).toBeTruthy();
+    expect(within(row).getByText(/2 \/ 5 · до/)).toBeTruthy();
+    expect(within(screen.getByTestId('invite-row-3')).getByText(/1 \/ 1 · бессрочно/)).toBeTruthy();
+    expect(within(row).getByRole('button', { name: 'Удалить инвайт #9' })).toBeTruthy();
+  });
+
   it('can create an invite when no services exist (login-only)', async () => {
     mockFetch({ 'GET /auth/api/admin/invites': () => [], 'GET /auth/api/admin/apps': () => [] });
     renderWithKit(<Harness initial="invites" />);

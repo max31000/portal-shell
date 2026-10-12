@@ -301,3 +301,23 @@
   }
 }
 
+
+/* ---------- Invites on phones ---------- */
+
+.inviteRowTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mvv-sp-2);
+  min-width: 0;
+}
+
+.inviteRowSub {
+  display: block;
+  margin-top: var(--mvv-sp-1);
+  padding-left: 36px;
+}
+
+.noShrink {
+  flex-shrink: 0;
+}
