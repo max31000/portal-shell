@@ -139,8 +139,11 @@ export function LoginModal({
   const [code, setCode] = useState('');
   /** The checked code (B): normalised value and the app it grants. */
   const [accepted, setAccepted] = useState<{ value: string; appId: string | null } | null>(null);
-  /** Widget payload awaiting a valid code (after `invite_required` / a code error) or a retry (after 429). */
-  const [held, setHeld] = useState<TelegramAuthData | null>(null);
+  /**
+   * Widget payload kept in memory (never in storage): `code` — refused for the code (`invite_*` in B,
+   * `invite_required` in C), resent automatically once a code passes the check; `retry` — rate-limited, «Повторить».
+   */
+  const [held, setHeld] = useState<{ data: TelegramAuthData; reason: 'code' | 'retry' } | null>(null);
   /** C answered `invite_required`: explain on A. */
   const [noAccount, setNoAccount] = useState(false);
   const [codeError, setCodeError] = useState<string | null>(null);
@@ -148,6 +151,10 @@ export function LoginModal({
   /** Code to check automatically right after opening (pending invite / draft); at most once per opening. */
   const [autoCheck, setAutoCheck] = useState<{ opening: number; code: string } | null>(null);
   const [opening, setOpening] = useState(0);
+  /** Bumped to move focus: A → the code field, B/C → the title. Runs after the render that re-enables the input. */
+  const [focusRequest, setFocusRequest] = useState(0);
+  /** Announced politely after a step change (not on the first render of an opening). */
+  const [announce, setAnnounce] = useState('');
 
   // Every opening starts afresh (decision 11): a pending invite or a typed draft → A with an automatic check
   // (decision 1); otherwise the device marker → C; otherwise A.
@@ -164,6 +171,8 @@ export function LoginModal({
       setCodeError(null);
       setFormError(null);
       setSigningIn(false);
+      setAnnounce('');
+      setFocusRequest(0);
       setCode(pending);
       if (pending.trim()) {
         setStep('code');
@@ -190,15 +199,11 @@ export function LoginModal({
 
   const codeRef = useRef<HTMLInputElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
-  /** Bumped to move focus: A → the code field, B/C → the title. Runs after the render that re-enables the input. */
-  const [focusRequest, setFocusRequest] = useState(0);
   useEffect(() => {
     if (focusRequest === 0) return;
     if (step === 'code') codeRef.current?.focus();
     else titleRef.current?.focus();
   }, [focusRequest, step]);
-  /** Announced politely after a step change (not on the first render of an opening). */
-  const [announce, setAnnounce] = useState('');
 
   function goTo(next: LoginStep) {
     setStep(next);
@@ -231,7 +236,7 @@ export function LoginModal({
     if (reason === 'invite_required') {
       // C (or B without a usable code): no account → A, the payload waits for a code (decision 4).
       clearAccountMarker();
-      setHeld(data);
+      setHeld({ data, reason: 'code' });
       setNoAccount(true);
       setAccepted(null);
       setCodeError(null);
@@ -239,7 +244,7 @@ export function LoginModal({
       goTo('code');
     } else if (reason && CODE_ERRORS[reason]) {
       // B: the code went bad between the check and the click → A with the code and the error (decision 3).
-      setHeld(data);
+      setHeld({ data, reason: 'code' });
       setAccepted(null);
       setCodeError(CODE_ERRORS[reason]);
       setFormError(null);
@@ -253,7 +258,7 @@ export function LoginModal({
       setFormError(LOGIN_TEXT.blocked);
     } else if (isRateLimited(error)) {
       // Rejected before the payload was checked: «Повторить» may resend it later.
-      setHeld(data);
+      setHeld({ data, reason: 'retry' });
       setFormError(LOGIN_TEXT.rateLimited);
     } else {
       setHeld(null);
@@ -318,7 +323,7 @@ export function LoginModal({
     setChecking(true);
     setCodeError(null);
     setFormError(null);
-    runCheck(normalized.value, openingRef.current, held);
+    runCheck(normalized.value, openingRef.current, held?.reason === 'code' ? held.data : null);
     return true;
   }
 
@@ -357,6 +362,8 @@ export function LoginModal({
   }
 
   function toCode() {
+    // A payload kept only for «Повторить» must not be resent with whatever code comes next.
+    if (held?.reason !== 'code') setHeld(null);
     setAccepted(null);
     setFormError(null);
     goTo('code');
@@ -364,11 +371,11 @@ export function LoginModal({
 
   const subtitle = message ? <p className={classes.text}>{message}</p> : null;
   const retry =
-    held && formError === LOGIN_TEXT.rateLimited && step !== 'code' ? (
+    held?.reason === 'retry' && formError === LOGIN_TEXT.rateLimited && step !== 'code' ? (
       <Button
         variant="default"
         mt="sm"
-        onClick={() => signIn(held, step === 'accepted' ? (accepted?.value ?? null) : null)}
+        onClick={() => signIn(held.data, step === 'accepted' ? (accepted?.value ?? null) : null)}
       >
         Повторить
       </Button>
@@ -393,8 +400,10 @@ export function LoginModal({
     </>
   );
 
+  // B needs a checked code; anything unexpected falls back to A (never mounts Telegram by accident).
+  const view: LoginStep = step === 'account' ? 'account' : step === 'accepted' && accepted ? 'accepted' : 'code';
   let content;
-  if (step === 'code') {
+  if (view === 'code') {
     content = (
       <>
         <p className={classes.lead}>Вход только по приглашению</p>
@@ -445,7 +454,7 @@ export function LoginModal({
         </button>
       </>
     );
-  } else if (step === 'accepted' && accepted) {
+  } else if (view === 'accepted' && accepted) {
     content = (
       <>
         <div className={classes.accepted}>
@@ -497,7 +506,7 @@ export function LoginModal({
       classNames={{ content: classes.content }}
       aria-labelledby="mvv42-login-title"
     >
-      <div className={classes.body} data-step={step}>
+      <div className={classes.body} data-step={view}>
         <span className={classes.mark} aria-hidden="true">
           m
         </span>

@@ -84,13 +84,15 @@ the visitor has a checked invite code or says they already have an account.
 | **C «Есть аккаунт»** | «Если аккаунта нет, вход не выполнится и данные не сохранятся»; «Новый пользователь? Ввести код» → A | widget |
 
 - Start: a pending invite (`?invite=`) or a typed draft → A with one automatic check per opening (→ B on success);
-  otherwise the device marker → C; otherwise A. Every opening starts afresh.
+  otherwise the device marker → C; otherwise A. Every opening starts afresh. A code typed into the field
+  (`sessionStorage['mvv42-invite-draft']`) overrides a link code captured earlier; opening a fresh `?invite=` link
+  clears the draft, so the newest link wins again.
 - `invite_*` from `/telegram` in B → A with the code and the error; `invite_required` in C → the marker is removed,
   A with «Аккаунт не найден. Нужен код приглашения». In both cases the widget payload stays in memory (never in
   storage) and is resent automatically as soon as a code passes the check — no second Telegram click.
 - A rate limit on the check is recognised by status 429 (nginx answers with HTML).
-- After sign-in: the invite's service if the login registered the user with an app invite, otherwise the service
-  sign-in was asked for. Leaving B/C removes the widget's script tag and iframe; `window.Telegram` and the cached
+- After sign-in: the invite's service if the login registered the user with an app invite (even over
+  `?login=1&return=`), otherwise the return URL, otherwise the service sign-in was asked for. Leaving B/C removes the widget's script tag and iframe; `window.Telegram` and the cached
   script stay (Telegram has been contacted by then anyway).
 
 **Device marker** `localStorage['mvv42-has-account'] = '1'` — set after every successful sign-in and whenever `/me`

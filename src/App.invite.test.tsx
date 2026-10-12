@@ -263,4 +263,66 @@ describe('code-first login in the shell', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Войти' }));
     expect(await screen.findByText('Если аккаунта нет, вход не выполнится и данные не сохранятся.')).toBeTruthy();
   });
+
+  it('invite registration with an app wins over ?login=1&return= (decision 9)', async () => {
+    history.replaceState(null, '', '/?login=1&return=/cashpulse/');
+    const replace = vi.fn();
+    vi.stubGlobal('location', { ...window.location, replace, href: window.location.href, search: window.location.search });
+    mockFetch({
+      'GET /registry.json': () => REGISTRY,
+      'GET /auth/api/me': () => ANON,
+      'POST /auth/api/invites/check': () => ({ valid: true, appId: 'bonds' }),
+      'POST /auth/api/telegram': () => ({ ...SIGNED_IN, invite: { appId: 'bonds' } }),
+    });
+    renderWithKit(<App />);
+    await screen.findByText('Вход только по приглашению');
+    fireEvent.change(codeField(), { target: { value: 'K7PM-2XQ9-HD4T' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Продолжить' }));
+    await screen.findByText('Код даёт доступ к «Bond Analytics»');
+    clickTelegram();
+    expect(await screen.findByText('Доступ к «Bond Analytics» открыт')).toBeTruthy();
+    await settle();
+    expect(replace).not.toHaveBeenCalled();
+  });
+});
+
+describe('no Telegram on step A, whatever opens the modal', () => {
+  it('?login=1 (standalone app asks for sign-in) → A without the widget script', async () => {
+    history.replaceState(null, '', '/?login=1&return=/bonds/');
+    mockFetch({ 'GET /registry.json': () => REGISTRY, 'GET /auth/api/me': () => ANON });
+    renderWithKit(<App />);
+    expect(await screen.findByText('Вход только по приглашению')).toBeTruthy();
+    await settle();
+    expect(telegramScripts()).toHaveLength(0);
+    expect(document.querySelector('iframe[id^="telegram-login"]')).toBeNull();
+  });
+
+  it('AUTH_REQUIRED from a service with the session gone → A without the widget script', async () => {
+    let signedIn = true;
+    mockFetch({
+      'GET /registry.json': () => REGISTRY,
+      'GET /auth/api/me': () => (signedIn ? SIGNED_IN : ANON),
+      'POST /auth/api/refresh': () => json({ error: 'invalid_refresh' }, 401),
+    });
+    history.replaceState(null, '', '/#/bonds');
+    renderWithKit(<App />);
+    await waitFor(() => expect(document.querySelector('iframe[src="/bonds/"]')).not.toBeNull());
+    const frame = document.querySelector('iframe[src="/bonds/"]') as HTMLIFrameElement;
+    signedIn = false;
+    // The signed-in /me set the device marker (→ C); without it the modal must open on A.
+    await waitFor(() => expect(localStorage.getItem(MARKER)).toBe('1'));
+    localStorage.removeItem(MARKER);
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: { type: 'AUTH_REQUIRED', serviceId: 'bonds' },
+          origin: window.location.origin,
+          source: frame.contentWindow,
+        }),
+      );
+    });
+    expect(await screen.findByText('Вход только по приглашению')).toBeTruthy();
+    await settle();
+    expect(telegramScripts()).toHaveLength(0);
+  });
 });

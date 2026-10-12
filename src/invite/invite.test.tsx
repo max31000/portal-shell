@@ -4,7 +4,7 @@ import { json, mockFetch } from '../test/utils';
 import type { AuthSnapshot, AuthStatus } from '../auth/useAuth';
 import type { Service } from '../types';
 import { INVITE_STORAGE_KEY, captureInvite, readPendingInvite } from './invite';
-import { INVITE_LOGIN_MESSAGE, useInviteFlow } from './useInviteFlow';
+import { useInviteFlow } from './useInviteFlow';
 
 const notices = vi.hoisted(() => [] as { id: string; message: string; tone?: string }[]);
 vi.mock('../shell/notice', () => ({
@@ -80,7 +80,7 @@ describe('useInviteFlow', () => {
       'POST /auth/api/invites/redeem': () => ({ appId: 'bonds', alreadyGranted: false, me: ME }),
     });
     const { props, hook } = flow('anonymous');
-    expect(props.requestLogin).toHaveBeenCalledWith(INVITE_LOGIN_MESSAGE);
+    expect(props.requestLogin).toHaveBeenCalledWith();
     hook.rerender({ ...props, authStatus: 'anonymous' });
     expect(props.requestLogin).toHaveBeenCalledTimes(1);
     expect(calls).toHaveLength(0);
@@ -138,7 +138,7 @@ describe('useInviteFlow', () => {
     await waitFor(() => expect(props.refreshAuth).toHaveBeenCalled());
     expect(hook.result.current.pending).toBe(true);
     hook.rerender({ ...props, authStatus: 'anonymous' });
-    await waitFor(() => expect(props.requestLogin).toHaveBeenCalledWith(INVITE_LOGIN_MESSAGE));
+    await waitFor(() => expect(props.requestLogin).toHaveBeenCalledWith());
   });
 
   it('login-only invite (appId null) for a signed-in user: dropped quietly, nothing opened', async () => {

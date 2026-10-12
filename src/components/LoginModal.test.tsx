@@ -250,6 +250,43 @@ describe('LoginModal — B «Код принят»', () => {
     expect(screen.getByText('Код принят')).toBeTruthy();
   });
 
+  it('the automatic resend failing for the code again → back to A with the error, no further requests', async () => {
+    const onAuth = vi.fn().mockRejectedValueOnce(deny('invite_expired')).mockRejectedValueOnce(deny('invite_exhausted'));
+    const checkInvite = ok();
+    renderModal({ onAuth, checkInvite });
+    await enterCode();
+    await screen.findByText('Код принят', { exact: true });
+    clickTelegram();
+    await screen.findByText('Срок действия кода истёк');
+    await enterCode('ABCD-EFGH-JKMN');
+    expect(await screen.findByText('Код уже использован')).toBeTruthy();
+    expect(codeField().value).toBe('ABCD-EFGH-JKMN');
+    expectNoTelegram();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 30));
+    });
+    expect(onAuth).toHaveBeenCalledTimes(2);
+    expect(checkInvite).toHaveBeenCalledTimes(2);
+  });
+
+  it('a payload kept only for «Повторить» (429) is dropped by «Изменить код»: no resend after the next check', async () => {
+    const onAuth = vi.fn().mockRejectedValueOnce(deny(null, 429)).mockResolvedValue(undefined);
+    renderModal({ onAuth });
+    await enterCode();
+    await screen.findByText('Код принят', { exact: true });
+    clickTelegram();
+    await screen.findByRole('button', { name: 'Повторить' });
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить код' }));
+    await screen.findByText('Вход только по приглашению');
+    await enterCode('ABCD-EFGH-JKMN');
+    await screen.findByText('Код принят', { exact: true });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 30));
+    });
+    expect(onAuth).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: 'Повторить' })).toBeNull();
+  });
+
   it.each(['Expired', 'Replayed'])('%s → asks for a new Telegram click, stays on B', async (code) => {
     const onAuth = vi.fn().mockRejectedValueOnce(deny(code, 401)).mockResolvedValueOnce(undefined);
     renderModal({ onAuth });
@@ -340,6 +377,33 @@ describe('LoginModal — C «Есть аккаунт» and the device marker', (
     await waitFor(() => expect(onAuth).toHaveBeenCalledTimes(2));
     expect(onAuth.mock.calls[1]).toEqual([PAYLOAD, 'K7PM2XQ9HD4T']);
     expect(onAuth.mock.calls[1][0]).toBe(onAuth.mock.calls[0][0]);
+  });
+
+  it('«У меня уже есть аккаунт» drops the held payload: a later checked code does not resend it', async () => {
+    localStorage.setItem(ACCOUNT_MARKER_KEY, '1');
+    const onAuth = vi.fn().mockRejectedValueOnce(deny('invite_required', 403)).mockResolvedValue(undefined);
+    renderModal({ onAuth });
+    clickTelegram();
+    await screen.findByText('Аккаунт не найден. Нужен код приглашения');
+    fireEvent.click(screen.getByRole('button', { name: 'У меня уже есть аккаунт' }));
+    await screen.findByText('Если аккаунта нет, вход не выполнится и данные не сохранятся.');
+    fireEvent.click(screen.getByRole('button', { name: 'Новый пользователь? Ввести код' }));
+    await screen.findByText('Вход только по приглашению');
+    await enterCode();
+    await screen.findByText('Код принят', { exact: true });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 30));
+    });
+    expect(onAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it('reopening resets the live region', async () => {
+    const { setOpened } = renderModal();
+    fireEvent.click(screen.getByRole('button', { name: 'У меня уже есть аккаунт' }));
+    await waitFor(() => expect(liveRegion().textContent).not.toBe(''));
+    setOpened(false);
+    setOpened(true);
+    await waitFor(() => expect(liveRegion().textContent).toBe(''));
   });
 
   it('a broken localStorage → A', () => {

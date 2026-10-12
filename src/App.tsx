@@ -122,7 +122,7 @@ export default function App() {
 
   // ----- Auth & login -----
 
-  const [loginRequest] = useState(readLoginRequest);
+  const [loginRequest, setLoginRequest] = useState(readLoginRequest);
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginDismissed, setLoginDismissed] = useState(false);
   const [afterLogin, setAfterLogin] = useState<Service | null>(null);
@@ -209,6 +209,16 @@ export default function App() {
       setLoginOpen(false);
       setLoginDismissed(true);
       setLoginMessage(undefined);
+      // `?login=1` is answered here; the «already signed in» effect must not redirect afterwards.
+      setLoginRequest({ requested: false, returnTo: null });
+      // Post-login target (decision 9): the service of the invite this login registered with wins over
+      // `?login=1&return=`; otherwise the return URL, otherwise the service sign-in was asked for.
+      if (inviteService) {
+        clearLoginParams();
+        select(inviteService);
+        setAfterLogin(null);
+        return;
+      }
       if (loginRequest.requested && loginRequest.returnTo) {
         const target = sanitizeReturnUrl(loginRequest.returnTo);
         if (target !== '/') {
@@ -217,8 +227,7 @@ export default function App() {
         }
       }
       clearLoginParams();
-      if (inviteService) select(inviteService);
-      else if (afterLogin) {
+      if (afterLogin) {
         if (isAppLocked(next.status, next.apps, afterLogin)) showNotice('no-access', NO_ACCESS_NOTICE);
         else select(afterLogin);
       }

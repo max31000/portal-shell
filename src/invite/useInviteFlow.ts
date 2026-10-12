@@ -7,15 +7,13 @@ import type { Service } from '../types';
 import { normalizeInviteCode } from './code';
 import { captureInvite, clearPendingInvite, redeemErrorText, storePendingInvite } from './invite';
 
-export const INVITE_LOGIN_MESSAGE = 'Войдите, чтобы принять приглашение.';
-
 interface InviteFlowOptions {
   authStatus: AuthStatus;
   /** Registry loaded (needed to name and open the service after redeem). */
   ready: boolean;
   services: Service[];
-  /** Ask the visitor to sign in (opens the login modal with a hint). */
-  requestLogin: (message: string) => void;
+  /** Ask the visitor to sign in (the login modal opens on the code step with the pending code). */
+  requestLogin: () => void;
   /** Adopt the `/me` from the redeem response. */
   applyMe: (me: MeResponse) => AuthSnapshot;
   /** Re-read `/me` (after a 401). */
@@ -91,7 +89,7 @@ export function useInviteFlow(options: InviteFlowOptions): InviteFlow {
     if (authStatus === 'anonymous') {
       if (!prompted.current) {
         prompted.current = true;
-        opts.current.requestLogin(INVITE_LOGIN_MESSAGE);
+        opts.current.requestLogin();
       }
       return;
     }
