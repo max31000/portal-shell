@@ -4,6 +4,7 @@ import { useRegistry } from './useRegistry';
 import { useAuth, isAppLocked, type AuthSnapshot } from './auth/useAuth';
 import { sanitizeReturnUrl } from './auth/returnUrl';
 import { loginTelegram, refreshSession, type TelegramAuthData } from './auth/api';
+import { setAccountMarker } from './auth/accountMarker';
 import { TopBar } from './components/TopBar';
 import { AppLauncher } from './components/AppLauncher';
 import { Home } from './components/Home';
@@ -121,11 +122,11 @@ export default function App() {
 
   // ----- Auth & login -----
 
-  const [loginRequest] = useState(readLoginRequest);
+  const [loginRequest, setLoginRequest] = useState(readLoginRequest);
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginDismissed, setLoginDismissed] = useState(false);
   const [afterLogin, setAfterLogin] = useState<Service | null>(null);
-  /** Subtitle of the login modal when sign-in is asked for a reason (an invite). */
+  /** Subtitle of the login modal when sign-in is asked for a service («Чтобы открыть «X», войдите»). */
   const [loginMessage, setLoginMessage] = useState<string | undefined>(undefined);
   /** Who opened the modal: closing it drops a pending invite only if the invite flow asked for sign-in. */
   const [loginReason, setLoginReason] = useState<'invite' | null>(null);
@@ -147,9 +148,10 @@ export default function App() {
     }
   }, [auth.status, loginRequest]);
 
-  const openLogin = useCallback((then: Service | null = null, message?: string, reason: 'invite' | null = null) => {
+  const openLogin = useCallback((then: Service | null = null, reason: 'invite' | null = null) => {
     setAfterLogin(then);
-    setLoginMessage(message);
+    // The code step has a fixed text; the reason for signing in is a subtitle (code-first login, decision 9).
+    setLoginMessage(then ? `Чтобы открыть «${then.name}», войдите` : undefined);
     setLoginReason(reason);
     setLoginOpen(true);
   }, []);
@@ -168,7 +170,8 @@ export default function App() {
     authStatus: auth.status,
     ready: !loading,
     services,
-    requestLogin: (message) => openLogin(null, message, 'invite'),
+    // The modal starts on the code step with the pending code and checks it at once (code-first login, decision 1).
+    requestLogin: () => openLogin(null, 'invite'),
     applyMe: auth.apply,
     refreshAuth: auth.refresh,
     onAuthChanged: () => frameRef.current?.post({ type: 'AUTH_CHANGED' }),
@@ -194,6 +197,7 @@ export default function App() {
       if (registered) invite.finish();
       else if (inviteCode) invite.adopt(inviteCode);
       clearInviteDraft();
+      setAccountMarker();
       const next = auth.apply(me);
       frameRef.current?.post({ type: 'AUTH_CHANGED' });
       let inviteService: Service | null = null;
@@ -205,6 +209,16 @@ export default function App() {
       setLoginOpen(false);
       setLoginDismissed(true);
       setLoginMessage(undefined);
+      // `?login=1` is answered here; the «already signed in» effect must not redirect afterwards.
+      setLoginRequest({ requested: false, returnTo: null });
+      // Post-login target (decision 9): the service of the invite this login registered with wins over
+      // `?login=1&return=`; otherwise the return URL, otherwise the service sign-in was asked for.
+      if (inviteService) {
+        clearLoginParams();
+        select(inviteService);
+        setAfterLogin(null);
+        return;
+      }
       if (loginRequest.requested && loginRequest.returnTo) {
         const target = sanitizeReturnUrl(loginRequest.returnTo);
         if (target !== '/') {
@@ -213,8 +227,7 @@ export default function App() {
         }
       }
       clearLoginParams();
-      if (inviteService) select(inviteService);
-      else if (afterLogin) {
+      if (afterLogin) {
         if (isAppLocked(next.status, next.apps, afterLogin)) showNotice('no-access', NO_ACCESS_NOTICE);
         else select(afterLogin);
       }
@@ -222,6 +235,8 @@ export default function App() {
     },
     [auth, invite, services, loginRequest, afterLogin, select],
   );
+
+  const appName = useCallback((id: string) => services.find((s) => s.id === id)?.name ?? id, [services]);
 
   const handleLogout = useCallback(async () => {
     try {
@@ -390,6 +405,7 @@ export default function App() {
           onAuth={handleTelegramAuth}
           message={loginMessage}
           inviteCode={invite.code}
+          appName={appName}
         />
       )}
     </>

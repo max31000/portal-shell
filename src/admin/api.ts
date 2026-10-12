@@ -31,7 +31,13 @@ async function apiJson<T>(input: string, init?: RequestInit): Promise<T> {
 export const ADMIN_API = '/auth/api/admin';
 
 export type AccessMode = 'public' | 'invite' | 'admin';
-export type LoginResult = 'ok' | 'denied_blocked' | 'invalid' | 'replayed' | 'denied_unregistered';
+export type LoginResult =
+  | 'ok'
+  | 'denied_blocked'
+  | 'invalid'
+  | 'replayed'
+  | 'denied_unregistered'
+  | 'invite_check_failed';
 export type InviteStatus = 'active' | 'expired' | 'exhausted';
 
 export interface AdminUser {
@@ -94,6 +100,8 @@ export interface AdminOverview {
   blocked: number;
   /** Sign-in attempts refused for lack of an invite over 7 days (closed registration; absent on an older auth). */
   deniedUnregistered7d?: number;
+  /** Failed `/invites/check` calls over 7 days (code-first login, no PII; absent on an older auth). */
+  failedInviteChecks7d?: number;
   apps: OverviewApp[];
 }
 

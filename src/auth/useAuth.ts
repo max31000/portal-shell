@@ -6,6 +6,7 @@ import {
   type AuthUser,
   type MeResponse,
 } from './api';
+import { setAccountMarker } from './accountMarker';
 
 export type AuthStatus = 'unavailable' | 'loading' | 'anonymous' | 'authenticated';
 
@@ -67,6 +68,12 @@ export function useAuth(): AuthState {
       await load().catch(() => {});
     }
   }, [load]);
+
+  // Device marker (code-first login, decision 2): every signed-in `/me` — boot, refresh, the login response —
+  // marks this browser as «has an account», so existing users get it on their first visit after the rollout.
+  useEffect(() => {
+    if (snap.status === 'authenticated') setAccountMarker();
+  }, [snap.status]);
 
   const refresh = useCallback(() => load(), [load]);
 

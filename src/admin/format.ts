@@ -61,6 +61,7 @@ export const LOGIN_RESULT: Record<LoginResult, { label: string; color: string }>
   invalid: { label: 'Неверная подпись', color: 'orange' },
   replayed: { label: 'Повтор', color: 'orange' },
   denied_unregistered: { label: 'Без приглашения', color: 'gray' },
+  invite_check_failed: { label: 'Неверный код', color: 'gray' },
 };
 
 export const INVITE_STATUS: Record<InviteStatus, { label: string; color: string }> = {

@@ -82,27 +82,30 @@
   color: var(--mvv-danger);
 }
 
-/* ---------- Invite code (closed registration) ---------- */
+/* ---------- Steps (code-first login) ---------- */
 
-.invite {
+.lead {
+  margin: var(--mvv-sp-4) 0 0;
+  font-size: var(--mvv-fs-15);
+  font-weight: var(--mvv-fw-medium);
+  color: var(--mvv-text);
+}
+
+.text + .lead {
+  margin-top: var(--mvv-sp-3);
+}
+
+.codeForm {
   width: 100%;
-  margin-top: var(--mvv-sp-6);
-  padding-top: var(--mvv-sp-5);
-  border-top: 1px solid var(--mvv-border);
+  margin-top: var(--mvv-sp-5);
   text-align: left;
 }
 
-.inviteNote {
-  margin: 0 0 var(--mvv-sp-3);
+.codeLabel {
   font-size: var(--mvv-fs-13);
   font-weight: var(--mvv-fw-medium);
-  color: var(--mvv-text);
-  text-align: center;
-}
-
-.codeLabel {
-  font-size: var(--mvv-fs-12);
   color: var(--mvv-text-2);
+  margin-bottom: var(--mvv-sp-1);
 }
 
 .codeInput {
@@ -114,26 +117,137 @@
   letter-spacing: 0.06em;
 }
 
-.invite[data-attention] .codeInput:not([data-error]) {
-  border-color: var(--mvv-warning);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mvv-warning) 18%, transparent);
-}
-
 .callout {
-  margin: var(--mvv-sp-3) 0 0;
+  margin: 0 0 var(--mvv-sp-3);
   padding: var(--mvv-sp-3);
   border-radius: var(--mvv-r-sm);
   background: var(--mvv-warning-bg);
   color: var(--mvv-text);
   font-size: var(--mvv-fs-13);
   line-height: 1.45;
+  text-align: center;
 }
 
-.calloutLink {
+.note {
+  margin: var(--mvv-sp-4) 0 0;
+  font-size: var(--mvv-fs-13);
+  line-height: 1.45;
+  color: var(--mvv-text-2);
+}
+
+.noteLink {
   font-weight: var(--mvv-fw-semibold);
+  white-space: nowrap;
+}
+
+.switch {
+  margin-top: var(--mvv-sp-4);
+  padding: var(--mvv-sp-2) var(--mvv-sp-3);
+  border: 0;
+  border-radius: var(--mvv-r-sm);
+  background: transparent;
+  color: var(--mvv-text);
+  font: inherit;
+  font-size: var(--mvv-fs-13);
+  font-weight: var(--mvv-fw-medium);
+  text-decoration: underline;
+  text-decoration-color: var(--mvv-border-strong);
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: background-color var(--mvv-dur-fast) var(--mvv-ease);
+}
+
+.switch:hover:not(:disabled) {
+  background: var(--mvv-surface-hover);
+}
+
+.switch:disabled {
+  color: var(--mvv-text-3);
+  cursor: default;
+}
+
+.accepted {
+  width: 100%;
+  margin-top: var(--mvv-sp-5);
+  padding: var(--mvv-sp-3) var(--mvv-sp-4);
+  border: 1px solid color-mix(in srgb, var(--mvv-success) 35%, var(--mvv-border));
+  border-radius: var(--mvv-r-md);
+  background: var(--mvv-success-bg);
+  text-align: left;
+}
+
+.acceptedHead {
+  display: flex;
+  align-items: center;
+  gap: var(--mvv-sp-2);
+}
+
+.acceptedIcon {
+  flex: none;
+  color: var(--mvv-success);
+}
+
+.acceptedTitle {
+  margin: 0;
+  font-size: var(--mvv-fs-14);
+  font-weight: var(--mvv-fw-semibold);
+  color: var(--mvv-text);
+}
+
+.acceptedService {
+  margin: var(--mvv-sp-1) 0 0;
+  font-size: var(--mvv-fs-13);
+  color: var(--mvv-text);
+  overflow-wrap: anywhere;
+}
+
+.acceptedFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mvv-sp-3);
+  margin-top: var(--mvv-sp-2);
+  padding-top: var(--mvv-sp-2);
+  border-top: 1px solid color-mix(in srgb, var(--mvv-success) 20%, var(--mvv-border));
+}
+
+.acceptedCode {
+  min-width: 0;
+  font-family: var(--mvv-font-mono);
+  font-size: var(--mvv-fs-12);
+  letter-spacing: 0.06em;
+  color: var(--mvv-text-2);
+  overflow-wrap: anywhere;
+}
+
+.change {
+  flex: none;
+  margin-right: calc(-1 * var(--mvv-sp-2));
+  padding: 2px var(--mvv-sp-2);
+  border: 0;
+  border-radius: var(--mvv-r-sm);
+  background: transparent;
+  color: var(--mvv-text-2);
+  font: inherit;
+  font-size: var(--mvv-fs-12);
+  font-weight: var(--mvv-fw-medium);
   text-decoration: underline;
   text-underline-offset: 2px;
-  white-space: nowrap;
+  cursor: pointer;
+}
+
+.change:hover:not(:disabled) {
+  color: var(--mvv-text);
+  background: var(--mvv-surface-hover);
+}
+
+.title:focus {
+  outline: none;
+}
+
+.title:focus-visible {
+  /* Focused programmatically on a step change (a landmark for screen readers, not a control). */
+  outline: none;
 }
 
 .hint {
