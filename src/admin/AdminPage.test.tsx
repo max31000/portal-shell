@@ -29,6 +29,22 @@ const APPS = [
 ];
 
 /**
+ * The «Создать инвайт» button is disabled until the invite list has loaded; clicking it earlier
+ * (slow CI runners) does nothing and the dialog never opens. Wait until it is enabled.
+ */
+async function findEnabledButton(name: string): Promise<HTMLElement> {
+  let button: HTMLElement | undefined;
+  await waitFor(
+    () => {
+      button = screen.getByRole('button', { name });
+      expect((button as HTMLButtonElement).disabled).toBe(false);
+    },
+    { timeout: 10000 },
+  );
+  return button!;
+}
+
+/**
  * Finds an open Mantine modal by its title. `findByRole('dialog', { name })` computes accessible
  * names for the whole tree on every poll and times out on slow CI runners; a text lookup is cheap.
  */
@@ -353,7 +369,7 @@ describe('invites', () => {
       }),
     });
     renderWithKit(<Harness initial="invites" />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Создать инвайт' }));
+    fireEvent.click(await findEnabledButton('Создать инвайт'));
     const dialog = await findDialog('Новый инвайт');
     fireEvent.click(within(dialog).getAllByLabelText('Сервис')[0]);
     fireEvent.click(await screen.findByRole('option', { name: 'Только вход' }));
@@ -409,7 +425,7 @@ describe('invites', () => {
       }),
     });
     renderWithKit(<Harness initial="invites" />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Создать инвайт' }));
+    fireEvent.click(await findEnabledButton('Создать инвайт'));
     const dialog = await findDialog('Новый инвайт');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Создать' }));
     await waitFor(() => expect(find('POST', '/auth/api/admin/invites')).toHaveLength(1));
