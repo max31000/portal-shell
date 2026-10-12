@@ -15,7 +15,8 @@ beforeEach(() => {
   vi.stubGlobal(
     'matchMedia',
     vi.fn((query: string) => ({
-      matches: false,
+      // Reduced motion: Mantine (respectReducedMotion) skips transitions → no timing races on slow CI.
+      matches: query.includes('prefers-reduced-motion'),
       media: query,
       onchange: null,
       addEventListener: vi.fn(),
