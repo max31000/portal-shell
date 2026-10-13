@@ -36,6 +36,14 @@
       "path": "/keysynth/",
       "color": "#f76707",
       "auth": "shared"
+    },
+    {
+      "id": "bliss",
+      "name": "Bliss",
+      "description": "Классические игры Windows XP",
+      "icon": "cards",
+      "path": "/bliss/",
+      "color": "#12b886"
     }
   ]
 }

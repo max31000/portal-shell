@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
 import { AppIcon } from './AppIcon';
 import { ICONS, resolveIcon } from './icons';
+import registry from '../../public/registry.json';
 
 describe('resolveIcon', () => {
   it('maps known Tabler names', () => {
@@ -22,8 +23,14 @@ describe('resolveIcon', () => {
   });
 
   it('includes every registry icon', () => {
-    for (const name of ['chart-area-line', 'home-dollar', 'chart-candle', 'piano']) {
+    for (const name of ['chart-area-line', 'home-dollar', 'chart-candle', 'piano', 'cards']) {
       expect(ICONS[name]).toBeDefined();
+    }
+  });
+
+  it('covers every icon used in public/registry.json', () => {
+    for (const service of registry.services) {
+      expect(ICONS[service.icon], `${service.id}: icon "${service.icon}"`).toBeDefined();
     }
   });
 });
