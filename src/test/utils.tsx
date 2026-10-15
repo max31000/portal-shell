@@ -29,6 +29,30 @@ export function stubDom(matches = false) {
   );
 }
 
+/**
+ * ResizeObserver that reports a fixed box on `observe` — Recharts' `ResponsiveContainer` renders nothing at
+ * jsdom's 0×0. Call after `stubDom()`.
+ */
+export function stubChartSize(width = 800, height = 300) {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      private readonly callback: ResizeObserverCallback;
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback;
+      }
+      observe(target: Element) {
+        this.callback(
+          [{ target, contentRect: { width, height, top: 0, left: 0, right: width, bottom: height, x: 0, y: 0 } } as unknown as ResizeObserverEntry],
+          this as unknown as ResizeObserver,
+        );
+      }
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+}
+
 export interface RecordedCall {
   method: string;
   path: string;

@@ -3,7 +3,7 @@ import type { Service } from '../types';
 /** `#/admin[/<tab>]` — a shell route, not a service (`admin` is a reserved app id in mvv42-auth). */
 export const ADMIN_ID = 'admin';
 
-export const ADMIN_TABS = ['overview', 'users', 'apps', 'invites', 'log'] as const;
+export const ADMIN_TABS = ['overview', 'users', 'apps', 'invites', 'log', 'monitoring'] as const;
 export type AdminTab = (typeof ADMIN_TABS)[number];
 
 export function isAdminTab(v: unknown): v is AdminTab {

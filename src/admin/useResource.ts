@@ -1,18 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+export interface ReloadOptions {
+  /** Do nothing while a load is still in flight (auto-refresh ticks). */
+  skipIfPending?: boolean;
+}
+
 export interface Resource<T> {
   data: T | undefined;
   error: unknown;
   /** True while the first load (or a reload after an error) runs; background reloads keep the data. */
   loading: boolean;
-  reload: () => Promise<void>;
+  reload: (options?: ReloadOptions) => Promise<void>;
 }
 
 /**
- * Loads `load()` on mount and whenever `key` changes. `reload()` re-runs it keeping the current data on
- * screen (no flash); responses that arrive after a newer request are dropped.
+ * Loads `load(signal)` on mount and whenever `key` changes. `reload()` re-runs it keeping the current data on
+ * screen (no flash). A new run aborts the previous one (its `signal`), and so does unmount; responses that arrive
+ * after a newer request are dropped.
  */
-export function useResource<T>(load: () => Promise<T>, key: string | number = ''): Resource<T> {
+export function useResource<T>(load: (signal: AbortSignal) => Promise<T>, key: string | number = ''): Resource<T> {
   const [state, setState] = useState<{ data: T | undefined; error: unknown; loading: boolean; key: string | number }>({
     data: undefined,
     error: null,
@@ -24,23 +30,39 @@ export function useResource<T>(load: () => Promise<T>, key: string | number = ''
     loadRef.current = load;
   }, [load]);
   const seq = useRef(0);
+  const inFlight = useRef<AbortController | null>(null);
 
   if (state.key !== key) setState({ data: undefined, error: null, loading: true, key });
 
-  const run = useCallback(async () => {
+  const run = useCallback(async (options?: ReloadOptions) => {
+    if (options?.skipIfPending && inFlight.current) return;
+    inFlight.current?.abort();
+    const controller = new AbortController();
+    inFlight.current = controller;
     const id = ++seq.current;
     setState((s) => (s.data === undefined ? { ...s, loading: true, error: null } : s));
     try {
-      const data = await loadRef.current();
+      const data = await loadRef.current(controller.signal);
       if (id === seq.current) setState((s) => ({ ...s, data, error: null, loading: false }));
     } catch (error) {
-      if (id === seq.current) setState((s) => ({ ...s, error, loading: false }));
+      if (id === seq.current && !controller.signal.aborted) setState((s) => ({ ...s, error, loading: false }));
+    } finally {
+      if (inFlight.current === controller) inFlight.current = null;
     }
   }, []);
 
   useEffect(() => {
     void run();
   }, [run, key]);
+
+  // Unmount: drop whatever is still loading.
+  useEffect(
+    () => () => {
+      inFlight.current?.abort();
+      inFlight.current = null;
+    },
+    [],
+  );
 
   return { data: state.data, error: state.error, loading: state.loading, reload: run };
 }

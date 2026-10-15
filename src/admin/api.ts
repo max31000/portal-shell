@@ -19,11 +19,16 @@ export function onAdminAuthLost(handler: () => void): () => void {
   };
 }
 
+/** Hands a 401/403 `ApiError` to the auth-lost handler; other errors are ignored. Also used by the monitoring client. */
+export function reportAuthLost(error: unknown): void {
+  if (isApiError(error) && (error.status === 401 || error.status === 403)) authLostHandler?.();
+}
+
 async function apiJson<T>(input: string, init?: RequestInit): Promise<T> {
   try {
     return await kitApiJson<T>(input, init);
   } catch (error) {
-    if (isApiError(error) && (error.status === 401 || error.status === 403)) authLostHandler?.();
+    reportAuthLost(error);
     throw error;
   }
 }
