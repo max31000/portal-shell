@@ -6,14 +6,14 @@ export default defineConfig({
   // mvv42Html(): the shared anti-flash colour-scheme script (`mvv42-color-scheme`) in <head>.
   plugins: [react(), mvv42Html()],
   resolve: {
-    dedupe: ['react', 'react-dom', '@mantine/core', '@mantine/hooks', '@mantine/notifications'],
+    dedupe: ['react', 'react-dom', '@mantine/core', '@mantine/hooks', '@mantine/notifications', 'recharts'],
   },
   base: '/',
   // Dev only: proxy service paths to production so the shell can be developed
   // against real apps (they become same-origin through the proxy).
   server: {
     proxy: Object.fromEntries(
-      ['/cashpulse', '/bonds', '/credit_calc', '/auth'].map((p) => [
+      ['/cashpulse', '/bonds', '/credit_calc', '/auth', '/monitoring'].map((p) => [
         p,
         { target: 'https://mvv42.ru', changeOrigin: true, secure: true },
       ]),

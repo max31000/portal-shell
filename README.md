@@ -16,7 +16,7 @@ The shell routes in the hash: `#/<serviceId><path>` → iframe `src = <service.p
 | `/#/cashpulse` | `/cashpulse/` |
 | `/#/cashpulse/operations?x=1` | `/cashpulse/operations?x=1` |
 | `/?login=1&return=/bonds/` | Opens sign-in, then returns to `/bonds/` (same-origin paths only) |
-| `/#/admin`, `/#/admin/<tab>` | Admin console (`users`, `apps`, `invites`, `log`) — owner only (`me.user.isOwner`); a 404 view for everyone else |
+| `/#/admin`, `/#/admin/<tab>` | Admin console (`users`, `apps`, `invites`, `log`, `monitoring[/<section>]`) — owner only (`me.user.isOwner`); a 404 view for everyone else |
 | `/?invite=<code>` | Invite link: sign in if needed, redeem, open the service (see Invites) |
 
 ## Registry (`public/registry.json`)
@@ -135,6 +135,13 @@ endpoint): **Обзор** (metrics, services), **Пользователи** (sea
 recent logins), **Сервисы** (anonymous / access mode), **Инвайты** (create → link shown once, list, delete),
 **Журнал** (login events, paged with `nextBefore`). Entry points — the «Админка» launcher tile and user-menu item —
 exist only for `isOwner`. Built with `@mvv42/kit` components + Mantine `Tabs`; loaded as a separate chunk.
+
+**Мониторинг** (`src/admin/monitoring/`, its own lazy chunk with Recharts) reads the owner-only proxy
+`/monitoring/api/*` (VictoriaMetrics, VictoriaLogs, vmalert — see `mvv42-infra/docs/specs/2026-10-16-monitoring-ui.md`):
+Обзор, Сервер, Контейнеры, HTTP, Логи (LogsQL search, level histogram, live tail), Алерты; a shared period
+(1ч…30д) and a 30 s auto-refresh paused while the browser tab is hidden. The section is kept in the hash
+(`#/admin/monitoring/<section>`, `replaceState`). A chart is a declaration (`PromChartSpec`: PromQL with
+`$__rate` / `$__range`, legend, unit, kind) rendered by `PromChart`.
 
 ## Invites
 
