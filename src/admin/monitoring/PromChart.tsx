@@ -1,11 +1,13 @@
 import { useMemo, type ReactNode } from 'react';
 import { Area, AreaChart, CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from 'recharts';
-import { ChartFrame, ChartTooltip, CHART_HEIGHT_COMPACT, pickAxisTicks, useChartTheme } from '@mvv42/kit/charts';
+import { ChartFrame, ChartTooltip, CHART_HEIGHT_COMPACT, useChartTheme } from '@mvv42/kit/charts';
+import type { TimeWindow } from './api';
+import { timeTicks, valueAxis } from './axis';
 import { usePromRange } from './hooks';
 import { useMonitoring } from './context';
 import { formatAxisTime, formatStamp } from './period';
-import { buildChart, type ChartData, type PromQuery } from './series';
-import { formatAxisValue, formatValue, type Unit } from './units';
+import { buildChart, chartMax, type ChartData, type PromQuery } from './series';
+import { formatValue, type Unit } from './units';
 
 export type ChartKind = 'line' | 'area' | 'stackedArea';
 
@@ -17,8 +19,10 @@ export interface PromChartSpec {
   queries: readonly PromQuery[];
   unit: Unit;
   kind?: ChartKind;
-  /** Named series kept (the rest summed into «Другое»). Default 8. */
+  /** Named series kept (the rest summed into «Другое», or dropped with `other: 'none'`). Default 8. */
   maxSeries?: number;
+  /** `none` for values that don't add up (latencies): series past `maxSeries` are dropped. */
+  other?: 'sum' | 'none';
   /** Fixed Y maximum (100 for percentages). */
   yMax?: number;
   /** Fixed entity order for legend and colours (services, CPU modes). */
@@ -37,6 +41,7 @@ export function PromChart({
   unit,
   kind = 'line',
   maxSeries,
+  other,
   yMax,
   order,
   colors,
@@ -45,8 +50,8 @@ export function PromChart({
   const exprs = useMemo(() => queries.map((q) => q.expr), [queries]);
   const { data, error, loading, reload } = usePromRange(exprs);
   const chart = useMemo<ChartData | null>(
-    () => (data ? buildChart(data.results, queries, { step: data.window.step, maxSeries, order, colors }) : null),
-    [data, queries, maxSeries, order, colors],
+    () => (data ? buildChart(data.results, queries, { step: data.window.step, maxSeries, other, order, colors }) : null),
+    [data, queries, maxSeries, other, order, colors],
   );
 
   return (
@@ -60,42 +65,46 @@ export function PromChart({
       empty={!!chart && (chart.series.length === 0 || chart.rows.length === 0)}
       emptyDescription="За выбранный период метрик нет."
     >
-      {chart ? <ChartBody chart={chart} unit={unit} kind={kind} yMax={yMax} /> : <></>}
+      {chart && data ? <ChartBody chart={chart} window={data.window} unit={unit} kind={kind} yMax={yMax} /> : <></>}
     </ChartFrame>
   );
 }
 
 interface ChartBodyProps {
   chart: ChartData;
+  window: TimeWindow;
   unit: Unit;
   kind: ChartKind;
   yMax?: number;
 }
 
 /** The Recharts chart inside ChartFrame's ResponsiveContainer (Recharts 3 passes the size by context). */
-function ChartBody({ chart, unit, kind, yMax }: ChartBodyProps) {
+function ChartBody({ chart, window, unit, kind, yMax }: ChartBodyProps) {
   const theme = useChartTheme();
   const { period } = useMonitoring();
-  const ticks = pickAxisTicks(
-    chart.rows.map((r) => r.t),
-    theme.maxTicks,
-  );
+  const startMs = window.start * 1000;
+  const endMs = window.end * 1000;
+  const y = useMemo(() => valueAxis(chartMax(chart, kind === 'stackedArea'), unit, yMax), [chart, kind, unit, yMax]);
+  // Time axis = the whole period: data never stretches and missing stretches stay visible.
   const xAxis = (
     <XAxis
       dataKey="t"
       type="number"
       scale="time"
-      domain={['dataMin', 'dataMax']}
-      ticks={ticks}
+      domain={[startMs, endMs]}
+      allowDataOverflow
+      ticks={timeTicks(startMs, endMs, period.axis, theme.maxTicks)}
       tickFormatter={(v: number) => formatAxisTime(v, period.axis)}
       {...theme.xAxis}
+      minTickGap={0}
     />
   );
   const yAxis = (
     <YAxis
-      domain={yMax !== undefined ? [0, yMax] : [0, 'auto']}
+      domain={[0, y.max]}
+      ticks={y.ticks}
       allowDataOverflow={yMax !== undefined}
-      tickFormatter={(v: number) => formatAxisValue(v, unit)}
+      tickFormatter={y.format}
       {...theme.yAxis}
       width={unit === 'bytes' || unit === 'bytesPerSec' ? 76 : theme.yAxis.width}
     />

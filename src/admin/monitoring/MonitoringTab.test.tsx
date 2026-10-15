@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { mockFetch, renderWithKit, stubChartSize, stubDom, type RecordedCall } from '../../test/utils';
+import { json, mockFetch, renderWithKit, stubChartSize, stubDom, type RecordedCall } from '../../test/utils';
+import { onAdminAuthLost } from '../api';
 import { MonitoringTab } from './MonitoringTab';
 
 const NOW = 1_760_600_000;
@@ -80,11 +81,26 @@ const ALERTS = {
   },
 };
 
-function mockMonitoring(alerts: unknown = ALERTS) {
+const APP_ENDPOINTS = [
+  { metric: { endpoint: '/api/admin/users/{id:long}' }, v: 120 },
+  { metric: {}, v: 7 },
+];
+
+function mockMonitoring(alerts: unknown = ALERTS, extra: Parameters<typeof mockFetch>[0] = {}) {
   return mockFetch({
-    'GET /monitoring/api/metrics/query?*': (call) => vector(param(call, 'query')),
+    ...extra,
+    'GET /monitoring/api/metrics/query?*': (call) => {
+      const query = param(call, 'query');
+      if (query.includes('http_requests_received_total') && query.includes('increase')) {
+        return {
+          status: 'success',
+          data: { resultType: 'vector', result: APP_ENDPOINTS.map((s) => ({ metric: s.metric, value: [NOW, String(s.v)] })) },
+        };
+      }
+      return vector(query);
+    },
     'GET /monitoring/api/metrics/query_range?*': (call) => matrix(call),
-    'GET /monitoring/api/alerts': () => alerts,
+    'GET /monitoring/api/alerts': () => (typeof alerts === 'function' ? alerts() : alerts),
     'GET /monitoring/api/logs/field_values?*': () => ({ values: [{ value: 'bonds-api', hits: 3 }] }),
     'GET /monitoring/api/logs/hits?*': () => ({ hits: [] }),
     'GET /monitoring/api/logs/query?*': () => new Response('', { status: 200 }),
@@ -224,5 +240,82 @@ describe('MonitoringTab', () => {
         true,
       ),
     );
+  });
+
+  it('an auto-refresh tick is skipped while the previous load is pending; «Обновить» aborts and restarts it', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let n = 0;
+    const { calls, fetchMock } = mockMonitoring(() => (++n === 1 ? new Promise(() => {}) : ALERTS));
+    renderWithKit(<MonitoringTab />);
+    const alertCalls = () => calls.filter((c) => c.path === '/monitoring/api/alerts').length;
+    await waitFor(() => expect(alertCalls()).toBe(1));
+
+    await act(async () => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(alertCalls()).toBe(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить' }));
+    await waitFor(() => expect(alertCalls()).toBe(2));
+    const first = fetchMock.mock.calls.find(([url]) => String(url) === '/monitoring/api/alerts')!;
+    expect((first[1] as RequestInit).signal?.aborted).toBe(true);
+    expect(await screen.findByText('ServiceDown')).toBeTruthy();
+  });
+
+  it('a period change aborts the requests of the old period', async () => {
+    history.replaceState(null, '', '#/admin/monitoring/server');
+    let hang = true;
+    const { fetchMock } = mockMonitoring(ALERTS, {});
+    const original = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input, init) =>
+      hang && String(input).includes('query_range') ? new Promise<Response>(() => {}) : original(input, init),
+    );
+    renderWithKit(<MonitoringTab />);
+    const ranges = () => fetchMock.mock.calls.filter(([url]) => String(url).includes('query_range'));
+    await waitFor(() => expect(ranges().length).toBeGreaterThan(0));
+    const old = ranges().map(([, init]) => (init as RequestInit).signal!);
+    expect(old.every((sig) => !sig.aborted)).toBe(true);
+
+    hang = false;
+    fireEvent.click(screen.getByRole('radio', { name: '24ч' }));
+    await waitFor(() => expect(old.every((sig) => sig.aborted)).toBe(true));
+    expect(await screen.findAllByText('CPU по режимам')).toBeTruthy();
+  });
+
+  it('a 403 the owner check does not confirm shows an error, the session stays', async () => {
+    const lost = vi.fn();
+    const off = onAdminAuthLost(lost);
+    const { calls } = mockMonitoring(() => json({}, 403), {
+      'GET /auth/api/admin/check': () => new Response(null, { status: 204 }),
+    });
+    history.replaceState(null, '', '#/admin/monitoring/alerts');
+    renderWithKit(<MonitoringTab />);
+    expect(await screen.findByText('Не удалось загрузить алерты')).toBeTruthy();
+    expect(calls.some((c) => c.path === '/auth/api/admin/check')).toBe(true);
+    expect(lost).not.toHaveBeenCalled();
+    off();
+  });
+
+  it('«Приложения»: per-service charts and the endpoints table', async () => {
+    const { calls } = mockMonitoring();
+    renderWithKit(<MonitoringTab />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Приложения' }));
+    expect(window.location.hash).toBe('#/admin/monitoring/apps');
+    expect(await screen.findByText('Запросы в секунду по эндпоинтам')).toBeTruthy();
+    expect(screen.getByText('Входы по результату')).toBeTruthy(); // auth only
+
+    const table = await screen.findByRole('table', { name: 'Эндпоинты за период' });
+    const rows = within(table).getAllByRole('row').slice(1);
+    expect(rows[0].textContent).toContain('/api/admin/users/{id:long}');
+    expect(rows[0].textContent).toContain('120');
+    expect(rows[1].textContent).toContain('(без маршрута)');
+
+    const rangeQueries = () =>
+      calls.filter((c) => c.path.startsWith('/monitoring/api/metrics/query_range')).map((c) => param(c, 'query'));
+    await waitFor(() => expect(rangeQueries().some((q) => q.includes('service="auth"'))).toBe(true));
+
+    fireEvent.click(screen.getByRole('radio', { name: 'bonds' }));
+    await waitFor(() => expect(rangeQueries().some((q) => q.includes('service="bonds"'))).toBe(true));
+    expect(screen.queryByText('Входы по результату')).toBeNull();
   });
 });

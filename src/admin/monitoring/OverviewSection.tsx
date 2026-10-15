@@ -1,8 +1,10 @@
 import { Badge, Button } from '@mantine/core';
 import { DataList, EmptyState, ErrorState, ListRow, Metric, MetricGrid, Section } from '@mvv42/kit';
-import { IconArrowRight, IconHeartRateMonitor, IconShieldCheck } from '@tabler/icons-react';
+import { IconArrowRight, IconFileText, IconHeartRateMonitor, IconShieldCheck } from '@tabler/icons-react';
+import type { Labels } from './api';
+import { useMonitoring } from './context';
 import { AlertList, AlertListSkeleton } from './AlertsSection';
-import { PROBE_JOB_LABEL, legend } from './entities';
+import { PROBE_JOB_LABEL, SERVICE_CONTAINER, legend } from './entities';
 import { scalarOf, useAlerts, useInstant } from './hooks';
 import { PromChart, type PromChartSpec } from './PromChart';
 import { formatDuration, formatValue } from './units';
@@ -105,13 +107,16 @@ interface Probe {
   duration: number | null;
 }
 
+const probeKey = (m: Labels) => `${m.job}/${m.service}/${m.instance ?? ''}`;
+
 function Health() {
+  const { openLogs } = useMonitoring();
   const { data, error, loading, reload } = useInstant(HEALTH);
-  const durations = new Map((data?.duration ?? []).map((s) => [`${s.metric.job}/${s.metric.service}`, Number(s.value[1])]));
+  const durations = new Map((data?.duration ?? []).map((s) => [probeKey(s.metric), Number(s.value[1])]));
   const probes: Probe[] = (data?.up ?? [])
     .filter((s) => s.metric.service)
     .map((s) => {
-      const key = `${s.metric.job}/${s.metric.service}`;
+      const key = probeKey(s.metric);
       const d = durations.get(key);
       return {
         key,
@@ -137,9 +142,26 @@ function Health() {
           {probes.map((p) => (
             <ListRow
               key={p.key}
-              icon={<span className={classes.dot} data-ok={p.ok} />}
-              title={p.service}
+              title={
+                <span className={classes.status}>
+                  <span className={classes.dot} data-ok={p.ok} role="img" aria-label={p.ok ? 'работает' : 'недоступен'} />
+                  {p.service}
+                </span>
+              }
               description={PROBE_JOB_LABEL[p.job] ?? p.job}
+              action={
+                SERVICE_CONTAINER[p.service] ? (
+                  <Button
+                    variant="subtle"
+                    size="compact-xs"
+                    leftSection={<IconFileText size={14} />}
+                    onClick={() => openLogs(SERVICE_CONTAINER[p.service]!)}
+                    aria-label={`Показать логи ${p.service}`}
+                  >
+                    Логи
+                  </Button>
+                ) : undefined
+              }
               value={
                 <span className={classes.status}>
                   {p.duration !== null && <span className={classes.muted}>{formatValue(p.duration, 'seconds')}</span>}

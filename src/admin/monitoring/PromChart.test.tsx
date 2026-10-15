@@ -34,7 +34,7 @@ const SPEC: PromChartSpec = {
 
 function renderChart(spec: PromChartSpec = SPEC) {
   return renderWithKit(
-    <MonitoringContext.Provider value={{ period: DEFAULT_PERIOD, refreshKey: 0, openLogs: () => {} }}>
+    <MonitoringContext.Provider value={{ period: DEFAULT_PERIOD, refreshKey: 0, refreshAuto: false, openLogs: () => {} }}>
       <PromChart {...spec} />
     </MonitoringContext.Provider>,
   );

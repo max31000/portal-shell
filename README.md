@@ -138,7 +138,8 @@ exist only for `isOwner`. Built with `@mvv42/kit` components + Mantine `Tabs`; l
 
 **Мониторинг** (`src/admin/monitoring/`, its own lazy chunk with Recharts) reads the owner-only proxy
 `/monitoring/api/*` (VictoriaMetrics, VictoriaLogs, vmalert — see `mvv42-infra/docs/specs/2026-10-16-monitoring-ui.md`):
-Обзор, Сервер, Контейнеры, HTTP, Логи (LogsQL search, level histogram, live tail), Алерты; a shared period
+Обзор, Сервер, Контейнеры, HTTP, Приложения (prometheus-net metrics of the .NET services, job `apps`), Логи
+(LogsQL search, level histogram, live tail), Алерты; a shared period
 (1ч…30д) and a 30 s auto-refresh paused while the browser tab is hidden. The section is kept in the hash
 (`#/admin/monitoring/<section>`, `replaceState`). A chart is a declaration (`PromChartSpec`: PromQL with
 `$__rate` / `$__range`, legend, unit, kind) rendered by `PromChart`.

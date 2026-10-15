@@ -14,6 +14,19 @@ export const HTTP_SERVICES = [
   'other',
 ] as const;
 
+/** Probe / app `service` → its container (for «Логи» links); portal and vpn have none. */
+export const SERVICE_CONTAINER: Readonly<Record<string, string | undefined>> = {
+  auth: 'mvv42-auth',
+  cashpulse: 'cashpulse-api',
+  bonds: 'bonds-api',
+  keysynth: 'keysynth-api',
+  credit_calc: 'credit_calc_api',
+};
+
+/** .NET services exporting app metrics (job `apps`, label `service`), in display order. */
+export const APP_SERVICES = ['auth', 'cashpulse', 'bonds', 'credit_calc'] as const;
+export type AppService = (typeof APP_SERVICES)[number];
+
 /** Containers of the monitoring stack run in the host network: their network counters are the host's. */
 export function isHostNetworkContainer(name: string): boolean {
   return name.startsWith('mvv42-mon-');

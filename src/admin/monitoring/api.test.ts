@@ -5,8 +5,13 @@ import { onAdminAuthLost } from '../api';
 import {
   buildLogFilter,
   buildLogQuery,
+  escapeRegex,
   expandQuery,
+  logQueryParts,
   logsqlString,
+  splitLogsQL,
+  substringFilter,
+  utcOffset,
   monitoringApi,
   parseNdjson,
   parseValue,
@@ -67,27 +72,61 @@ describe('LogsQL building', () => {
     expect(logsqlString('\\"')).toBe('"\\\\\\""');
   });
 
-  it('builds a case-insensitive text filter with containers and levels', () => {
+  it('escapes regex metacharacters for the substring filter', () => {
+    expect(escapeRegex('a.b*c+(d)[e]{f}|g^h$i?\\')).toBe('a\\.b\\*c\\+\\(d\\)\\[e\\]\\{f\\}\\|g\\^h\\$i\\?\\\\');
+    // Regex escape, then LogsQL string escape: `1.5"x` → (?i)1\.5"x → "(?i)1\\.5\"x".
+    expect(substringFilter('1.5"x')).toBe('~"(?i)1\\\\.5\\"x"');
+    expect(new RegExp(escapeRegex('a.b(c)')).test('xa.b(c)y')).toBe(true);
+    expect(new RegExp(escapeRegex('a.b')).test('axb')).toBe(false);
+  });
+
+  it('builds a case-insensitive substring filter with containers and levels', () => {
     expect(buildLogFilter({ containers: [], levels: [], text: '', raw: false })).toBe('*');
     expect(
       buildLogFilter({ containers: ['bonds-api', 'nginx'], levels: ['error', 'warn'], text: ' time"out ', raw: false }),
-    ).toBe('container:in("bonds-api", "nginx") level:in("error", "warn") i("time\\"out")');
+    ).toBe('container:in("bonds-api", "nginx") level:in("error", "warn") ~"(?i)time\\"out"');
   });
 
-  it('passes raw LogsQL as is (wrapped when combined, never when it has pipes)', () => {
-    expect(buildLogFilter({ containers: [], levels: [], text: 'error or panic', raw: true })).toBe('error or panic');
-    expect(buildLogFilter({ containers: ['nginx'], levels: [], text: 'error or panic', raw: true })).toBe(
-      'container:in("nginx") (error or panic)',
+  it('splits raw LogsQL at the first top-level pipe, ignoring pipes in quotes', () => {
+    expect(splitLogsQL('error')).toEqual({ filter: 'error', pipes: '' });
+    expect(splitLogsQL('error or panic | fields _msg | limit 3')).toEqual({
+      filter: 'error or panic',
+      pipes: '| fields _msg | limit 3',
+    });
+    expect(splitLogsQL('_msg:"a|b" or \'c|d\' | stats count()')).toEqual({
+      filter: '_msg:"a|b" or \'c|d\'',
+      pipes: '| stats count()',
+    });
+    expect(splitLogsQL('"say \\"|\\"" | uniq')).toEqual({ filter: '"say \\"|\\""', pipes: '| uniq' });
+    expect(splitLogsQL('| fields _msg')).toEqual({ filter: '', pipes: '| fields _msg' });
+  });
+
+  it('raw LogsQL: (filters) and (raw filter), user pipes before our sort and limit', () => {
+    const raw = (text: string, containers: string[] = []) => ({ containers, levels: [], text, raw: true });
+    expect(buildLogQuery(raw('error or panic'))).toBe('error or panic | sort by (_time desc) | limit 500');
+    expect(buildLogQuery(raw('error or panic', ['nginx']))).toBe(
+      '(container:in("nginx")) and (error or panic) | sort by (_time desc) | limit 500',
     );
-    expect(buildLogFilter({ containers: ['nginx'], levels: [], text: 'error | stats count()', raw: true })).toBe(
-      'container:in("nginx") error | stats count()',
+    expect(buildLogQuery(raw('error | fields _time, _msg | limit 10', ['nginx']))).toBe(
+      '(container:in("nginx")) and (error) | fields _time, _msg | limit 10 | sort by (_time desc) | limit 500',
     );
+    expect(buildLogQuery(raw('| fields _msg', ['nginx']))).toBe(
+      'container:in("nginx") | fields _msg | sort by (_time desc) | limit 500',
+    );
+    // Hits and tail get the filter part only.
+    expect(buildLogFilter(raw('error | fields _msg', ['nginx']))).toBe('(container:in("nginx")) and (error)');
+    expect(logQueryParts(raw('error | fields _msg')).pipes).toBe('| fields _msg');
   });
 
   it('search query sorts newest first and limits to 500', () => {
     expect(buildLogQuery({ containers: [], levels: ['error'], text: '', raw: false })).toBe(
       'level:in("error") | sort by (_time desc) | limit 500',
     );
+  });
+
+  it('UTC offset for hits buckets', () => {
+    const date = { getTimezoneOffset: () => -180 } as Date;
+    expect(utcOffset(date)).toBe('10800s');
   });
 });
 
@@ -117,18 +156,51 @@ describe('monitoringApi', () => {
     await expect(monitoringApi.query('(')).rejects.toThrow('VictoriaMetrics: bad query');
   });
 
-  it('401/403 reach the admin auth-lost handler', async () => {
+  it('a 401 that survived the refresh means the session is gone', async () => {
     const lost = vi.fn();
     const off = onAdminAuthLost(lost);
     mockFetch({
       'POST /auth/api/refresh': () => json({}, 401),
-      'GET /monitoring/api/alerts': () => json({}, 403),
       'GET /monitoring/api/logs/query?*': () => json({}, 401),
     });
-    await expect(monitoringApi.alerts()).rejects.toSatisfy(isApiError);
     await expect(monitoringApi.logs('*', { start: 1, end: 2 })).rejects.toMatchObject({ status: 401 });
-    expect(lost).toHaveBeenCalledTimes(2);
+    expect(lost).toHaveBeenCalledOnce();
     off();
+  });
+
+  it('a 403 counts only when /auth/api/admin/check confirms it', async () => {
+    const lost = vi.fn();
+    const off = onAdminAuthLost(lost);
+    let check = 204;
+    const { calls } = mockFetch({
+      'GET /monitoring/api/alerts': () => json({}, 403),
+      'GET /auth/api/admin/check': () => new Response(null, { status: check }),
+    });
+    // An nginx allow-list miss: the owner check passes → just an error for the caller.
+    await expect(monitoringApi.alerts()).rejects.toSatisfy(isApiError);
+    expect(lost).not.toHaveBeenCalled();
+    expect(calls.filter((c) => c.path === '/auth/api/admin/check')).toHaveLength(1);
+
+    check = 403;
+    await expect(monitoringApi.alerts()).rejects.toMatchObject({ status: 403 });
+    expect(lost).toHaveBeenCalledOnce();
+    off();
+  });
+
+  it('concurrent 403s share one owner check', async () => {
+    const { calls } = mockFetch({
+      'GET /monitoring/api/alerts': () => json({}, 403),
+      'GET /auth/api/admin/check': () => new Response(null, { status: 204 }),
+    });
+    await Promise.allSettled([monitoringApi.alerts(), monitoringApi.alerts(), monitoringApi.alerts()]);
+    expect(calls.filter((c) => c.path === '/auth/api/admin/check')).toHaveLength(1);
+  });
+
+  it('passes the abort signal to fetch', async () => {
+    const { fetchMock } = mockFetch({ 'GET /monitoring/api/alerts': () => ({ data: { alerts: [] } }) });
+    const ctrl = new AbortController();
+    await monitoringApi.alerts(ctrl.signal);
+    expect((fetchMock.mock.calls[0][1] as RequestInit).signal).toBe(ctrl.signal);
   });
 
   it('logs are NDJSON lines', async () => {

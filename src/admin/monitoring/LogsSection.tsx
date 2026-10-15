@@ -1,24 +1,28 @@
-import { useCallback, useMemo, useState, type FormEvent } from 'react';
+import { memo, useCallback, useId, useMemo, useState, type FormEvent } from 'react';
 import { Badge, Button, Chip, Group, MultiSelect, Skeleton, Switch, TextInput, UnstyledButton } from '@mantine/core';
 import { EmptyState, ErrorState, Section } from '@mvv42/kit';
 import { Bar, BarChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from 'recharts';
-import { ChartFrame, ChartTooltip, CHART_HEIGHT_COMPACT, pickAxisTicks, useChartTheme } from '@mvv42/kit/charts';
+import { ChartFrame, ChartTooltip, CHART_HEIGHT_COMPACT, useChartTheme } from '@mvv42/kit/charts';
 import { IconFileText, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconSearch } from '@tabler/icons-react';
 import {
   LOG_LEVELS,
-  buildLogFilter,
+  LOG_LIMIT,
   buildLogQuery,
+  buildTailQuery,
+  logQueryParts,
   monitoringApi,
+  utcOffset,
   type LogEntry,
   type LogFilters,
   type LogHits,
 } from './api';
+import { timeTicks, valueAxis } from './axis';
 import { useMonitoring, useMonitoringResource } from './context';
 import { LEVEL_BADGE, LEVEL_COLORS } from './entities';
-import { formatAxisTime, formatStamp, hitsStep, periodWindow } from './period';
+import { formatAxisTime, formatStamp, periodWindow } from './period';
 import { hitsRows } from './series';
 import { formatValue } from './units';
-import { LIVE_LIMIT, useLiveTail, type LiveLine } from './useLiveTail';
+import { LIVE_LIMIT, keyLines, useLiveTail, type LogLineItem } from './useLiveTail';
 import classes from './Monitoring.module.css';
 
 interface LogsSectionProps {
@@ -40,25 +44,39 @@ export function LogsSection({ filters, onFiltersChange }: LogsSectionProps) {
     setDraft(filters.text);
   }
 
-  const filter = buildLogFilter(filters);
+  const { filter } = logQueryParts(filters);
   const query = buildLogQuery(filters);
+  const tailQuery = buildTailQuery(filters);
+  // Live shows the stream: the search and the histogram keep what they have instead of refreshing.
+  const frozen = { frozen: live };
 
   const containers = useMonitoringResource(
-    useCallback(() => monitoringApi.fieldValues('container', periodWindow(period)), [period]),
+    useCallback(
+      (signal: AbortSignal) => monitoringApi.fieldValues('container', periodWindow(period), '*', signal),
+      [period],
+    ),
     'containers',
+    frozen,
   );
   const search = useMonitoringResource(
-    useCallback(() => monitoringApi.logs(query, periodWindow(period)), [query, period]),
+    useCallback((signal: AbortSignal) => monitoringApi.logs(query, periodWindow(period), signal), [query, period]),
     `logs\n${query}`,
+    frozen,
   );
   const hits = useMonitoringResource(
     useCallback(
-      () => monitoringApi.hits(filter, { ...periodWindow(period), step: hitsStep(period) }, 'level'),
+      async (signal: AbortSignal) => {
+        const window = periodWindow(period);
+        const offset = utcOffset();
+        const data = await monitoringApi.hits(filter, { ...window, step: `${period.hitsStep}s`, offset }, 'level', signal);
+        return { data, window: { ...window, step: period.hitsStep, offset: parseInt(offset, 10) } };
+      },
       [filter, period],
     ),
     `hits\n${filter}`,
+    frozen,
   );
-  const tail = useLiveTail(filter, live, paused);
+  const tail = useLiveTail(tailQuery.query, live, paused);
 
   const containerOptions = useMemo(() => {
     const names = new Set((containers.data ?? []).map((v) => v.value).filter(Boolean));
@@ -71,11 +89,12 @@ export function LogsSection({ filters, onFiltersChange }: LogsSectionProps) {
     e.preventDefault();
     set({ text: draft });
   };
-
-  const searchLines: LiveLine[] = useMemo(
-    () => (search.data ?? []).map((entry, i) => ({ id: i, entry })),
-    [search.data],
+  const onContainer = useCallback(
+    (container: string) => onFiltersChange({ ...filters, containers: [container] }),
+    [filters, onFiltersChange],
   );
+
+  const searchLines = useMemo(() => keyLines(search.data ?? []), [search.data]);
 
   return (
     <div className={classes.stack}>
@@ -97,7 +116,7 @@ export function LogsSection({ filters, onFiltersChange }: LogsSectionProps) {
             <TextInput
               className={classes.search}
               label={filters.raw ? 'Запрос LogsQL' : 'Текст'}
-              placeholder={filters.raw ? 'error OR _msg:~"timeout"' : 'подстрока, без учёта регистра'}
+              placeholder={filters.raw ? 'error OR _msg:~"timeout" | fields _time, _msg' : 'подстрока, без учёта регистра'}
               value={draft}
               onChange={(e) => setDraft(e.currentTarget.value)}
               leftSection={<IconSearch size={16} />}
@@ -128,14 +147,18 @@ export function LogsSection({ filters, onFiltersChange }: LogsSectionProps) {
         </form>
       </Section>
 
-      <HitsChart hits={hits.data} loading={hits.loading && !hits.data} error={hits.data ? undefined : hits.error} onRetry={hits.reload} />
+      <HitsChart
+        hits={hits.data?.data}
+        window={hits.data?.window}
+        loading={hits.loading && !hits.data}
+        error={hits.data ? undefined : hits.error}
+        onRetry={() => void hits.reload()}
+      />
 
       <Section
         title={live ? 'Live' : 'Строки'}
         description={
-          live
-            ? `Новые сверху, не больше ${LIVE_LIMIT}`
-            : `Новые сверху, не больше 500 за ${period.label}`
+          live ? `Новые сверху, не больше ${LIVE_LIMIT}` : `Новые сверху, не больше ${LOG_LIMIT} за ${period.label}`
         }
         padding="none"
         actions={
@@ -178,10 +201,17 @@ export function LogsSection({ filters, onFiltersChange }: LogsSectionProps) {
                   </Badge>
                   {paused && 'Пауза — новые строки копятся'}
                 </>
+              ) : tail.status === 'hidden' ? (
+                'Вкладка скрыта — поток на паузе'
               ) : tail.status === 'reconnecting' ? (
                 'Переподключение…'
               ) : (
                 'Подключение…'
+              )}
+              {tailQuery.dropped && (
+                <span className={classes.muted}>
+                  Live не поддерживает stats / sort / limit — пайпы запроса не применяются: {tailQuery.dropped}
+                </span>
               )}
             </div>
             {tail.error ? (
@@ -189,7 +219,7 @@ export function LogsSection({ filters, onFiltersChange }: LogsSectionProps) {
             ) : tail.lines.length === 0 ? (
               <EmptyState compact icon={<IconFileText />} title="Ждём новые строки" description="Подходящие строки появятся здесь." />
             ) : (
-              <LogList lines={tail.lines} onContainer={(c) => set({ containers: [c] })} />
+              <LogList lines={tail.lines} onContainer={onContainer} />
             )}
           </>
         ) : search.error && !search.data ? (
@@ -203,7 +233,7 @@ export function LogsSection({ filters, onFiltersChange }: LogsSectionProps) {
         ) : searchLines.length === 0 ? (
           <EmptyState compact icon={<IconFileText />} title="Ничего не найдено" description="Измените фильтры или период." />
         ) : (
-          <LogList lines={searchLines} onContainer={(c) => set({ containers: [c] })} />
+          <LogList lines={searchLines} onContainer={onContainer} />
         )}
       </Section>
     </div>
@@ -215,21 +245,29 @@ export function LogsSection({ filters, onFiltersChange }: LogsSectionProps) {
 const LONG_LINES = 3;
 const LONG_CHARS = 360;
 
-function LogList({ lines, onContainer }: { lines: LiveLine[]; onContainer: (container: string) => void }) {
+function LogList({ lines, onContainer }: { lines: LogLineItem[]; onContainer: (container: string) => void }) {
   return (
     <ul className={classes.logList} aria-label="Строки логов">
       {lines.map((l) => (
-        <LogLine key={l.id} entry={l.entry} onContainer={onContainer} />
+        <LogLine key={l.key} entry={l.entry} onContainer={onContainer} />
       ))}
     </ul>
   );
 }
 
-function LogLine({ entry, onContainer }: { entry: LogEntry; onContainer: (container: string) => void }) {
+/** One line; memoised — a live flush re-renders only the new lines. */
+const LogLine = memo(function LogLine({
+  entry,
+  onContainer,
+}: {
+  entry: LogEntry;
+  onContainer: (container: string) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const msgId = useId();
   const msg = String(entry._msg ?? '');
   const long = msg.split('\n').length > LONG_LINES || msg.length > LONG_CHARS;
-  const level = entry.level || 'info';
+  const level = entry.level ? String(entry.level) : '';
   const badge = LEVEL_BADGE[level] ?? { color: 'gray', variant: 'light' as const };
   const ms = Date.parse(entry._time);
 
@@ -238,9 +276,15 @@ function LogLine({ entry, onContainer }: { entry: LogEntry; onContainer: (contai
       <time className={classes.logTime} dateTime={entry._time}>
         {Number.isNaN(ms) ? entry._time : formatStamp(ms, true)}
       </time>
-      <Badge color={badge.color} variant={badge.variant} size="sm" radius="sm">
-        {level}
-      </Badge>
+      {level ? (
+        <Badge color={badge.color} variant={badge.variant} size="sm" radius="sm">
+          {level}
+        </Badge>
+      ) : (
+        <span className={classes.muted} title="Уровень не определён">
+          —
+        </span>
+      )}
       {entry.container ? (
         <UnstyledButton
           className={classes.logContainer}
@@ -253,60 +297,84 @@ function LogLine({ entry, onContainer }: { entry: LogEntry; onContainer: (contai
         <span className={classes.logContainer}>—</span>
       )}
       <div className={classes.logMsgCell}>
-        <pre className={classes.logMsg} data-collapsed={long && !expanded}>
+        <pre id={msgId} className={classes.logMsg} data-collapsed={long && !expanded}>
           {msg}
         </pre>
         {long && (
-          <UnstyledButton className={`${classes.expand} mvv-text-link`} onClick={() => setExpanded((e) => !e)} aria-expanded={expanded}>
+          <UnstyledButton
+            className={`${classes.expand} mvv-text-link`}
+            onClick={() => setExpanded((e) => !e)}
+            aria-expanded={expanded}
+            aria-controls={msgId}
+          >
             {expanded ? 'Свернуть' : 'Показать полностью'}
           </UnstyledButton>
         )}
       </div>
     </li>
   );
-}
+});
 
 // ---------- Histogram ----------
 
 interface HitsChartProps {
   hits: LogHits[] | undefined;
+  window: { start: number; end: number; step: number; offset: number } | undefined;
   loading: boolean;
   error: unknown;
   onRetry: () => void;
 }
 
-function HitsChart({ hits, loading, error, onRetry }: HitsChartProps) {
-  const theme = useChartTheme({ height: CHART_HEIGHT_COMPACT - 60 });
+function HitsChart({ hits, window, loading, error, onRetry }: HitsChartProps) {
+  const height = CHART_HEIGHT_COMPACT - 60;
+  const theme = useChartTheme({ height });
   const { period } = useMonitoring();
-  const { rows, levels } = useMemo(() => hitsRows(hits ?? []), [hits]);
+  const { rows, levels } = useMemo(
+    () => (window ? hitsRows(hits ?? [], window) : { rows: [], levels: [] }),
+    [hits, window],
+  );
+  const total = useMemo(() => rows.reduce((sum, r) => sum + levels.reduce((s, l) => s + (r[l] ?? 0), 0), 0), [rows, levels]);
+  const y = useMemo(() => {
+    let max = 0;
+    for (const r of rows) max = Math.max(max, levels.reduce((s, l) => s + (r[l] ?? 0), 0));
+    return valueAxis(max, 'count', undefined, 4);
+  }, [rows, levels]);
+  const startMs = (window?.start ?? 0) * 1000;
+  const endMs = (window?.end ?? 0) * 1000;
+  // Bars are centred in their bucket; the axis spans the whole period.
+  const half = ((window?.step ?? 0) * 1000) / 2;
+  const data = useMemo(() => rows.map((r) => ({ ...r, x: r.t + half })), [rows, half]);
+
   return (
     <ChartFrame
       title="Строк по уровням"
       explanation="Сколько строк логов за каждый интервал периода, по уровню. Уровень определяет Vector по тексту строки."
-      height={CHART_HEIGHT_COMPACT - 60}
+      height={height}
       loading={loading}
       error={error ?? undefined}
-      onRetry={() => void onRetry()}
-      empty={!loading && rows.length === 0}
+      onRetry={onRetry}
+      empty={!loading && total === 0}
       emptyDescription="За период подходящих строк нет."
     >
-      <BarChart data={rows} margin={theme.margin} accessibilityLayer>
+      <BarChart data={data} margin={theme.margin} accessibilityLayer barCategoryGap={1}>
         <CartesianGrid {...theme.grid} />
         <XAxis
-          dataKey="t"
-          ticks={pickAxisTicks(
-            rows.map((r) => r.t),
-            theme.maxTicks,
-          )}
+          dataKey="x"
+          type="number"
+          scale="time"
+          domain={[startMs, endMs]}
+          allowDataOverflow
+          ticks={timeTicks(startMs, endMs, period.axis, theme.maxTicks)}
           tickFormatter={(v: number) => formatAxisTime(v, period.axis)}
           {...theme.xAxis}
+          minTickGap={0}
         />
-        <YAxis allowDecimals={false} tickFormatter={(v: number) => formatValue(v, 'count')} {...theme.yAxis} />
+        <YAxis domain={[0, y.max]} ticks={y.ticks} tickFormatter={y.format} {...theme.yAxis} />
         <Tooltip
           {...theme.barTooltip}
           content={
             <ChartTooltip
-              labelFormatter={(v) => formatStamp(Number(v))}
+              labelFormatter={(v) => formatStamp(Number(v) - half)}
               valueFormatter={(v) => formatValue(typeof v === 'number' ? v : null, 'count')}
             />
           }
@@ -320,7 +388,6 @@ function HitsChart({ hits, loading, error, onRetry }: HitsChartProps) {
             stackId="levels"
             fill={LEVEL_COLORS[l] ?? 'var(--mvv-text-3)'}
             radius={i === levels.length - 1 ? theme.bar.radius : undefined}
-            maxBarSize={theme.bar.maxBarSize}
             isAnimationActive={false}
           />
         ))}

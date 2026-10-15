@@ -25,12 +25,17 @@ export interface RangeData {
 export function usePromRange(exprs: readonly string[]) {
   const { period } = useMonitoring();
   const key = exprs.join('\n');
-  const load = useCallback(async (): Promise<RangeData> => {
-    const window = periodWindow(period);
-    const vars = { rate: rateWindow(window.step), range: period.value };
-    const results = await Promise.all(key.split('\n').map((e) => monitoringApi.queryRange(expandQuery(e, vars), window)));
-    return { results, window };
-  }, [key, period]);
+  const load = useCallback(
+    async (signal: AbortSignal): Promise<RangeData> => {
+      const window = periodWindow(period);
+      const vars = { rate: rateWindow(window.step), range: period.value };
+      const results = await Promise.all(
+        key.split('\n').map((e) => monitoringApi.queryRange(expandQuery(e, vars), window, signal)),
+      );
+      return { results, window };
+    },
+    [key, period],
+  );
   return useMonitoringResource(load, `range\n${key}`);
 }
 
@@ -41,13 +46,18 @@ export function usePromRange(exprs: readonly string[]) {
 export function useInstant<K extends string>(exprs: Readonly<Record<K, string>>) {
   const { period } = useMonitoring();
   const key = JSON.stringify(exprs);
-  const load = useCallback(async (): Promise<Record<K, PromSample[]>> => {
-    const parsed = JSON.parse(key) as Record<K, string>;
-    const vars = { rate: INSTANT_RATE, range: period.value };
-    const names = Object.keys(parsed) as K[];
-    const vectors = await Promise.all(names.map((n) => monitoringApi.query(expandQuery(parsed[n], vars))));
-    return Object.fromEntries(names.map((n, i) => [n, vectors[i]])) as Record<K, PromSample[]>;
-  }, [key, period]);
+  const load = useCallback(
+    async (signal: AbortSignal): Promise<Record<K, PromSample[]>> => {
+      const parsed = JSON.parse(key) as Record<K, string>;
+      const vars = { rate: INSTANT_RATE, range: period.value };
+      const names = Object.keys(parsed) as K[];
+      const vectors = await Promise.all(
+        names.map((n) => monitoringApi.query(expandQuery(parsed[n], vars), undefined, signal)),
+      );
+      return Object.fromEntries(names.map((n, i) => [n, vectors[i]])) as Record<K, PromSample[]>;
+    },
+    [key, period],
+  );
   return useMonitoringResource(load, `instant\n${key}`);
 }
 
@@ -59,11 +69,11 @@ export function scalarOf(vector: PromSample[] | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Vector → value by one label (`name`, `service`). */
-export function byLabel(vector: PromSample[] | undefined, label: string): Map<string, number> {
+/** Vector → value by one label (`name`, `service`); `fallback` stands in for an absent (empty) label. */
+export function byLabel(vector: PromSample[] | undefined, label: string, fallback?: string): Map<string, number> {
   const out = new Map<string, number>();
   for (const s of vector ?? []) {
-    const k = s.metric[label];
+    const k = s.metric[label] ?? fallback;
     const n = Number(s.value?.[1]);
     if (k !== undefined && Number.isFinite(n)) out.set(k, (out.get(k) ?? 0) + n);
   }
@@ -85,6 +95,6 @@ export function sortAlerts(alerts: Alert[]): Alert[] {
 }
 
 export function useAlerts() {
-  const load = useCallback(async () => sortAlerts(await monitoringApi.alerts()), []);
+  const load = useCallback(async (signal: AbortSignal) => sortAlerts(await monitoringApi.alerts(signal)), []);
   return useMonitoringResource(load, 'alerts');
 }

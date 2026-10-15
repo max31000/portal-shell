@@ -2,11 +2,12 @@
  * Client of the monitoring proxy (`/monitoring/api`, nginx, owner only, GET only) — spec
  * `mvv42-infra/docs/specs/2026-10-16-monitoring-ui.md`. Responses are the upstreams' own: VictoriaMetrics
  * (`/metrics/*`, Prometheus API), VictoriaLogs (`/logs/*`, LogsQL; `query` and `tail` answer NDJSON) and vmalert
- * (`/alerts`). JSON goes through the admin `apiJson` (cookies, one refresh, 401/403 → auth lost); NDJSON through
- * the kit's `mvv42Fetch` with the same auth-lost routing.
+ * (`/alerts`). JSON goes through the kit's `apiJson`, NDJSON through `mvv42Fetch` (cookies, one refresh on 401);
+ * a failure reaches the admin auth-lost handler only when the session / ownership is really gone (`checkAuthLost`).
+ * Every call takes an optional `AbortSignal`.
  */
-import { ApiError, mvv42Fetch } from '@mvv42/kit/platform';
-import { apiJson, reportAuthLost } from '../api';
+import { ApiError, apiJson as kitApiJson, isApiError, mvv42Fetch } from '@mvv42/kit/platform';
+import { reportAuthLost } from '../api';
 
 export const MONITORING_API = '/monitoring/api';
 
@@ -121,7 +122,51 @@ export function parseNdjson<T = LogEntry>(text: string): T[] {
   return out;
 }
 
-/** `mvv42Fetch` + `ApiError` on non-2xx (401/403 also reach the auth-lost handler). */
+// ---------- Auth ----------
+
+/** Owner check behind the nginx gate (204 for the owner). */
+export const OWNER_CHECK = '/auth/api/admin/check';
+
+let ownerCheck: Promise<void> | null = null;
+
+/**
+ * Decides whether a failed monitoring call means the session / ownership is gone. A 401 has already survived the
+ * kit's refresh → lost. A 403 is ambiguous (nginx also denies paths outside its allow-list), so it is confirmed by
+ * `GET /auth/api/admin/check`: only 401/403 there → lost; otherwise the caller just shows its ErrorState.
+ * Concurrent 403s share one check.
+ */
+export async function checkAuthLost(error: unknown): Promise<void> {
+  if (!isApiError(error)) return;
+  if (error.status === 401) {
+    reportAuthLost(error);
+    return;
+  }
+  if (error.status !== 403) return;
+  if (!ownerCheck) {
+    ownerCheck = (async () => {
+      try {
+        const r = await mvv42Fetch(OWNER_CHECK, { headers: { Accept: 'application/json' } });
+        if (r.status === 401 || r.status === 403) reportAuthLost(new ApiError(r.status, null, `HTTP ${r.status}`));
+      } catch {
+        /* offline: not an auth loss */
+      }
+    })().finally(() => {
+      ownerCheck = null;
+    });
+  }
+  await ownerCheck;
+}
+
+async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+  try {
+    return await kitApiJson<T>(url, signal ? { signal } : undefined);
+  } catch (error) {
+    if (!signal?.aborted) await checkAuthLost(error);
+    throw error;
+  }
+}
+
+/** `mvv42Fetch` + `ApiError` on non-2xx (with the same auth-lost rules as JSON calls). */
 async function fetchOk(url: string, init?: RequestInit): Promise<Response> {
   let response: Response;
   try {
@@ -132,7 +177,7 @@ async function fetchOk(url: string, init?: RequestInit): Promise<Response> {
   }
   if (!response.ok) {
     const error = new ApiError(response.status, null, response.statusText || `HTTP ${response.status}`);
-    reportAuthLost(error);
+    await checkAuthLost(error);
     throw error;
   }
   return response;
@@ -140,57 +185,85 @@ async function fetchOk(url: string, init?: RequestInit): Promise<Response> {
 
 const NDJSON = { Accept: 'application/x-ndjson, application/json;q=0.9' };
 
+/** Hits window: bucket `step` and `offset` (the browser's UTC offset, so days start at local midnight). */
+export interface HitsWindow {
+  start: number;
+  end: number;
+  step: string;
+  offset?: string;
+}
+
+/** The browser's UTC offset as a VictoriaLogs duration (`10800s` for UTC+3). */
+export function utcOffset(date: Date = new Date()): string {
+  return `${-date.getTimezoneOffset() * 60}s`;
+}
+
 export const monitoringApi = {
   /** Instant query (`time` omitted = now). */
-  query: async (query: string, time?: number): Promise<PromSample[]> =>
-    promResult(await apiJson<PromResponse<PromSample>>(`${MONITORING_API}/metrics/query?${qs({ query, time })}`)),
+  query: async (query: string, time?: number, signal?: AbortSignal): Promise<PromSample[]> =>
+    promResult(await getJson<PromResponse<PromSample>>(`${MONITORING_API}/metrics/query?${qs({ query, time })}`, signal)),
 
-  queryRange: async (query: string, w: TimeWindow): Promise<PromSeries[]> =>
+  queryRange: async (query: string, w: TimeWindow, signal?: AbortSignal): Promise<PromSeries[]> =>
     promResult(
-      await apiJson<PromResponse<PromSeries>>(
+      await getJson<PromResponse<PromSeries>>(
         `${MONITORING_API}/metrics/query_range?${qs({ query, start: w.start, end: w.end, step: w.step })}`,
+        signal,
       ),
     ),
 
-  labelValues: async (name: string): Promise<string[]> => {
-    const body = await apiJson<{ data?: string[] }>(`${MONITORING_API}/metrics/label/${encodeURIComponent(name)}/values`);
+  labelValues: async (name: string, signal?: AbortSignal): Promise<string[]> => {
+    const body = await getJson<{ data?: string[] }>(
+      `${MONITORING_API}/metrics/label/${encodeURIComponent(name)}/values`,
+      signal,
+    );
     return Array.isArray(body?.data) ? body.data : [];
   },
 
   /** LogsQL query → entries in the server's order. */
-  logs: async (query: string, w: { start: number; end: number; limit?: number }): Promise<LogEntry[]> => {
+  logs: async (
+    query: string,
+    w: { start: number; end: number; limit?: number },
+    signal?: AbortSignal,
+  ): Promise<LogEntry[]> => {
     const response = await fetchOk(
       `${MONITORING_API}/logs/query?${qs({ query, limit: w.limit, start: w.start, end: w.end })}`,
-      { headers: NDJSON },
+      { headers: NDJSON, signal },
     );
     return parseNdjson<LogEntry>(await response.text());
   },
 
-  /** Line counts per `field` value in `step` buckets. */
-  hits: async (query: string, w: { start: number; end: number; step: string }, field = 'level'): Promise<LogHits[]> => {
-    const body = await apiJson<{ hits?: LogHits[] }>(
-      `${MONITORING_API}/logs/hits?${qs({ query, start: w.start, end: w.end, step: w.step, field })}`,
+  /** Line counts per `field` value in `step` buckets (aligned with `offset`). */
+  hits: async (query: string, w: HitsWindow, field = 'level', signal?: AbortSignal): Promise<LogHits[]> => {
+    const body = await getJson<{ hits?: LogHits[] }>(
+      `${MONITORING_API}/logs/hits?${qs({ query, start: w.start, end: w.end, step: w.step, offset: w.offset, field })}`,
+      signal,
     );
     return Array.isArray(body?.hits) ? body.hits : [];
   },
 
-  fieldValues: async (field: string, w: { start: number; end: number }, query = '*'): Promise<FieldValue[]> => {
-    const body = await apiJson<{ values?: FieldValue[] }>(
+  fieldValues: async (
+    field: string,
+    w: { start: number; end: number },
+    query = '*',
+    signal?: AbortSignal,
+  ): Promise<FieldValue[]> => {
+    const body = await getJson<{ values?: FieldValue[] }>(
       `${MONITORING_API}/logs/field_values?${qs({ query, field, start: w.start, end: w.end })}`,
+      signal,
     );
     return Array.isArray(body?.values) ? body.values : [];
   },
 
-  alerts: async (): Promise<Alert[]> => {
-    const body = await apiJson<{ data?: { alerts?: Alert[] } }>(`${MONITORING_API}/alerts`);
+  alerts: async (signal?: AbortSignal): Promise<Alert[]> => {
+    const body = await getJson<{ data?: { alerts?: Alert[] } }>(`${MONITORING_API}/alerts`, signal);
     return Array.isArray(body?.data?.alerts) ? body.data.alerts : [];
   },
 };
 
 /**
- * Follows `/logs/tail` until the server closes it (VictoriaLogs ends a tail within 10 min) or `signal` aborts;
- * `onOpen` fires once the server accepted the stream, every complete NDJSON line goes to `onEntry`. Resolves on a normal end, rejects on errors (the caller
- * reconnects).
+ * Follows `/logs/tail` until the server closes it (VictoriaLogs ends a tail within 10 min) or `signal` aborts.
+ * `onOpen` fires once the server accepted the stream; every complete NDJSON line goes to `onEntry`. Resolves on a
+ * normal end, rejects on errors (the caller reconnects).
  */
 export async function tailLogs(
   query: string,
@@ -237,32 +310,99 @@ export function logsqlString(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
+/** RE2 metacharacters escaped: the text matches literally inside a regexp. */
+export function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Case-insensitive substring of `_msg`: `~"(?i)<escaped>"`. */
+export function substringFilter(text: string): string {
+  return `~${logsqlString(`(?i)${escapeRegex(text)}`)}`;
+}
+
+/**
+ * Splits raw LogsQL at the first top-level `|` (outside quotes and backticks) into the filter part and the pipes
+ * (`"| fields …"`, or `""`).
+ */
+export function splitLogsQL(raw: string): { filter: string; pipes: string } {
+  let quote: string | null = null;
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i];
+    if (quote) {
+      if (c === '\\' && quote !== '`') i++;
+      else if (c === quote) quote = null;
+    } else if (c === '"' || c === "'" || c === '`') quote = c;
+    else if (c === '|') return { filter: raw.slice(0, i).trim(), pipes: raw.slice(i).trim() };
+  }
+  return { filter: raw.trim(), pipes: '' };
+}
+
 export interface LogFilters {
   containers: string[];
   levels: string[];
   text: string;
-  /** `text` is raw LogsQL instead of a case-insensitive phrase. */
+  /** `text` is raw LogsQL instead of a case-insensitive substring. */
   raw: boolean;
 }
 
-/** Filters → a LogsQL filter expression (`*` when nothing is set); no pipes. */
-export function buildLogFilter({ containers, levels, text, raw }: LogFilters): string {
+/** Filters → the filter expression (`*` when empty) and the user's raw pipes (raw mode only, else `""`). */
+export function logQueryParts({ containers, levels, text, raw }: LogFilters): { filter: string; pipes: string } {
   const parts: string[] = [];
   if (containers.length > 0) parts.push(`container:in(${containers.map(logsqlString).join(', ')})`);
   if (levels.length > 0) parts.push(`level:in(${levels.map(logsqlString).join(', ')})`);
   const t = text.trim();
-  if (t) {
-    if (!raw) parts.push(`i(${logsqlString(t)})`);
-    // Raw LogsQL as is; wrapped when combined with other filters so its `or` keeps its meaning (pipes can't be).
-    else parts.push(parts.length > 0 && !t.includes('|') ? `(${t})` : t);
+  if (!t) return { filter: parts.length > 0 ? parts.join(' ') : '*', pipes: '' };
+  if (!raw) {
+    parts.push(substringFilter(t));
+    return { filter: parts.join(' '), pipes: '' };
   }
-  return parts.length > 0 ? parts.join(' ') : '*';
+  const { filter: userFilter, pipes } = splitLogsQL(t);
+  let filter: string;
+  if (!userFilter) filter = parts.length > 0 ? parts.join(' ') : '*';
+  else if (parts.length === 0) filter = userFilter;
+  else filter = `(${parts.join(' ')}) and (${userFilter})`;
+  return { filter, pipes };
+}
+
+/** Pipes `/logs/tail` rejects (stats, reordering, limiting). */
+const TAIL_FORBIDDEN_PIPES = new Set(['stats', 'uniq', 'top', 'sort', 'limit', 'head', 'offset', 'skip']);
+
+/** `| a … | b …` → `['a …', 'b …']` (top-level pipes only). */
+export function splitPipes(pipes: string): string[] {
+  const out: string[] = [];
+  let rest = pipes.trim();
+  while (rest.startsWith('|')) {
+    const { filter, pipes: next } = splitLogsQL(rest.slice(1));
+    if (filter) out.push(filter);
+    rest = next;
+  }
+  return out;
+}
+
+/**
+ * The live-tail query: the filter plus the user's pipes when VictoriaLogs tail accepts all of them (no stats /
+ * sort / limit pipes); otherwise the pipes are dropped and returned in `dropped` for a hint.
+ */
+export function buildTailQuery(filters: LogFilters): { query: string; dropped: string } {
+  const { filter, pipes } = logQueryParts(filters);
+  if (!pipes) return { query: filter, dropped: '' };
+  const forbidden = splitPipes(pipes).some((p) => TAIL_FORBIDDEN_PIPES.has(p.split(/[\s(]/, 1)[0].toLowerCase()));
+  return forbidden ? { query: filter, dropped: pipes } : { query: `${filter} ${pipes}`, dropped: '' };
+}
+
+/** The filter expression only (hits; no pipes). */
+export function buildLogFilter(filters: LogFilters): string {
+  return logQueryParts(filters).filter;
 }
 
 /** Max lines of a search. */
 export const LOG_LIMIT = 500;
 
-/** The search query: newest first, at most `LOG_LIMIT` lines. */
+/**
+ * The search query: filters, the user's pipes, then ours — newest first, at most `LOG_LIMIT` lines. Our sort and
+ * limit always come last, so they apply to whatever the user's pipes produce.
+ */
 export function buildLogQuery(filters: LogFilters): string {
-  return `${buildLogFilter(filters)} | sort by (_time desc) | limit ${LOG_LIMIT}`;
+  const { filter, pipes } = logQueryParts(filters);
+  return `${filter}${pipes ? ` ${pipes}` : ''} | sort by (_time desc) | limit ${LOG_LIMIT}`;
 }

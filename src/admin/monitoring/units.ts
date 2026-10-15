@@ -1,5 +1,5 @@
 /** Value units of the monitoring charts and tiles. `percent` values are 0…100. */
-export type Unit = 'percent' | 'bytes' | 'bytesPerSec' | 'rps' | 'seconds' | 'count';
+export type Unit = 'percent' | 'bytes' | 'bytesPerSec' | 'rps' | 'perMin' | 'seconds' | 'count';
 
 const BYTE_UNITS = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ', 'ПБ'];
 
@@ -37,23 +37,12 @@ export function formatValue(v: number | null | undefined, unit: Unit): string {
       return `${formatBytes(v)}/с`;
     case 'rps':
       return `${num(v, Math.abs(v) < 1 ? 2 : 1)} запр/с`;
+    case 'perMin':
+      return `${num(v, Math.abs(v) < 1 ? 2 : 1)} /мин`;
     case 'seconds':
       return formatSeconds(v);
     case 'count':
       return num(v, 0);
-  }
-}
-
-/** Short Y-axis tick (no «запр/с»: the chart title says it). */
-export function formatAxisValue(v: number, unit: Unit): string {
-  switch (unit) {
-    case 'percent':
-      return `${num(v, 0)}%`;
-    case 'rps':
-    case 'count':
-      return num(v);
-    default:
-      return formatValue(v, unit);
   }
 }
 

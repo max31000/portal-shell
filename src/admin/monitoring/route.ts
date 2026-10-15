@@ -6,6 +6,7 @@ export const MONITORING_SECTIONS = [
   { value: 'server', label: 'Сервер' },
   { value: 'containers', label: 'Контейнеры' },
   { value: 'http', label: 'HTTP' },
+  { value: 'apps', label: 'Приложения' },
   { value: 'logs', label: 'Логи' },
   { value: 'alerts', label: 'Алерты' },
 ] as const;

@@ -13,6 +13,7 @@ import {
   type MonitoringSection,
 } from './route';
 import { AlertsSection } from './AlertsSection';
+import { AppsSection } from './AppsSection';
 import { ContainersSection } from './ContainersSection';
 import { HttpSection } from './HttpSection';
 import { LogsSection } from './LogsSection';
@@ -33,7 +34,7 @@ const EMPTY_LOG_FILTERS: LogFilters = { containers: [], levels: [], text: '', ra
 export function MonitoringTab() {
   const [section, setSection] = useState<MonitoringSection>(() => parseMonitoringSection(window.location.hash));
   const [period, setPeriod] = useState<Period>(DEFAULT_PERIOD);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [refresh, setRefresh] = useState({ key: 0, auto: false });
   const [auto, setAuto] = useState(true);
   const [logFilters, setLogFilters] = useState<LogFilters>(EMPTY_LOG_FILTERS);
   const isPhone = useMediaQuery('(max-width: 48em)') ?? false;
@@ -51,7 +52,8 @@ export function MonitoringTab() {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+  const bump = useCallback((auto: boolean) => setRefresh((r) => ({ key: r.key + 1, auto })), []);
+  const refreshNow = useCallback(() => bump(false), [bump]);
 
   // Every 30 s while the browser tab is visible; a tick missed while hidden fires on return.
   const missed = useRef(false);
@@ -59,12 +61,12 @@ export function MonitoringTab() {
     if (!auto) return;
     const id = window.setInterval(() => {
       if (document.visibilityState === 'hidden') missed.current = true;
-      else refresh();
+      else bump(true);
     }, REFRESH_MS);
     const onVisibility = () => {
       if (document.visibilityState !== 'hidden' && missed.current) {
         missed.current = false;
-        refresh();
+        bump(true);
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
@@ -72,14 +74,17 @@ export function MonitoringTab() {
       window.clearInterval(id);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [auto, refresh]);
+  }, [auto, bump]);
 
   const openLogs = useCallback((container: string) => {
     setLogFilters({ ...EMPTY_LOG_FILTERS, containers: [container] });
     setSection('logs');
   }, []);
 
-  const context = useMemo<MonitoringContextValue>(() => ({ period, refreshKey, openLogs }), [period, refreshKey, openLogs]);
+  const context = useMemo<MonitoringContextValue>(
+    () => ({ period, refreshKey: refresh.key, refreshAuto: refresh.auto, openLogs }),
+    [period, refresh, openLogs],
+  );
   const sectionData = MONITORING_SECTIONS.map((s) => ({ value: s.value, label: s.label }));
 
   return (
@@ -111,7 +116,7 @@ export function MonitoringTab() {
             value={period.value}
             onChange={(v) => setPeriod(findPeriod(v))}
           />
-          <Button variant="default" size="xs" leftSection={<IconRefresh size={14} stroke={1.75} />} onClick={refresh}>
+          <Button variant="default" size="xs" leftSection={<IconRefresh size={14} stroke={1.75} />} onClick={refreshNow}>
             Обновить
           </Button>
           <Switch
@@ -128,6 +133,7 @@ export function MonitoringTab() {
       {section === 'server' && <ServerSection />}
       {section === 'containers' && <ContainersSection />}
       {section === 'http' && <HttpSection />}
+      {section === 'apps' && <AppsSection />}
       {section === 'logs' && <LogsSection filters={logFilters} onFiltersChange={setLogFilters} />}
       {section === 'alerts' && <AlertsSection />}
     </MonitoringContext.Provider>
